@@ -10,18 +10,21 @@ Este módulo contiene todos los enums del sistema:
 - SignalStatus: Estados de señales (PENDING, EXECUTED, CANCELLED)
 - SignalPositionSide: Lado de la posición (LONG, SHORT)
 """
-
 from enum import Enum
 
 
 class SignalType(str, Enum):
-    """Tipos de señales generadas por una estrategia."""
+    """Tipos de señales generadas por una estrategia.
+    
+    Por ahora solo usamos BUY y SELL. En el futuro podríamos
+    reactivar CLOSE, TAKE_PROFIT, STOP_LOSS si necesitamos
+    distinguir semánticamente el motivo del cierre.
+    """
     BUY = "BUY"
     SELL = "SELL"
-    CLOSE = "CLOSE"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    STOP_LOSS = "STOP_LOSS"
-
+    # CLOSE = "CLOSE"  # Desactivado temporalmente
+    # TAKE_PROFIT = "TAKE_PROFIT"
+    # STOP_LOSS = "STOP_LOSS"
 
 class OrderType(str, Enum):
     """Tipos de órdenes disponibles."""
