@@ -12,7 +12,7 @@ from typing import List
 
 # Import models and enums
 from models.enums import SignalType, OrderType, CurrencyType, ExchangeName, MarketType, SignalPositionSide
-from models.signals import StrategySignal
+from models._deprecateds_ignals import StrategySignal
 from models.trades.crypto_trade import CryptoTrade
 from models.markets.crypto_market import CryptoMarketDefinition
 from utils.timeframe import Timeframe
