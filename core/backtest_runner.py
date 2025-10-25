@@ -111,3 +111,39 @@ class BacktestRunner:
             return
         
         self.metrics.save_results(output_dir=output_dir)
+
+
+
+    def get_visualizer(self):
+        """
+        Obtiene el visualizador para uso avanzado.
+        
+        Returns:
+            BacktestVisualizer configurado con los resultados
+        """
+        if self.metrics is None:
+            raise ValueError("⚠️ Primero ejecuta run()")
+        
+        from visualization.chart_plotter import BacktestVisualizer
+        return BacktestVisualizer(
+            strategy=self.strategy,
+            trade_metrics_df=self.metrics.trade_metrics_df
+        )
+
+    def plot_trades(
+        self, 
+        interval_hours: int = 5, 
+        number_visualisation: int = None
+    ):
+        """
+        Genera gráficos de los trades.
+        
+        Args:
+            interval_hours: Horas por gráfico (default: 5)
+            number_visualisation: Límite de gráficos (None = todos)
+        """
+        viz = self.get_visualizer()
+        viz.plot_trades(
+            interval_hours=interval_hours,
+            number_visualisation=number_visualisation
+        )
