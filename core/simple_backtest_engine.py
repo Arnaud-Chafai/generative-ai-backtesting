@@ -29,6 +29,7 @@ class Entry:
     price: float  # Precio real después de aplicar slippage
     size_usdt: float  # Cuántos USDT usamos en esta entrada
     fee: float  # Fees pagados en esta entrada
+    slippage_cost: float  # Costo del slippage en esta entrada
 
 
 class Position:
@@ -46,7 +47,7 @@ class Position:
         self.entries: list[Entry] = []
     
     def add_entry(self, timestamp: datetime, price: float, 
-                    size_usdt: float, fee: float):
+                  size_usdt: float, fee: float, slippage_cost: float):
         """
         Añade una entrada más a esta posición.
         
@@ -58,7 +59,8 @@ class Position:
             timestamp=timestamp,
             price=price,
             size_usdt=size_usdt,
-            fee=fee
+            fee=fee,
+            slippage_cost=slippage_cost
         ))
     
     def total_cost(self) -> float:
@@ -68,6 +70,10 @@ class Position:
     def total_fees_on_entries(self) -> float:
         """Fees totales pagados en todas las entradas."""
         return sum(entry.fee for entry in self.entries)
+    
+    def total_slippage_on_entries(self) -> float:
+        """Slippage total pagado en todas las entradas."""
+        return sum(entry.slippage_cost for entry in self.entries)
     
     def total_crypto(self) -> float:
         """
@@ -94,7 +100,6 @@ class Position:
 class BacktestEngine:
     """
     Motor principal de backtest.
-    
     
     Procesa señales de trading en orden cronológico y mantiene
     el estado del capital y las posiciones abiertas.
@@ -163,6 +168,10 @@ class BacktestEngine:
         # Paso 3: Calcular fees de esta entrada
         entry_fee = entry_size_usdt * self.fee_rate
         
+        # Paso 3.5: Calcular costo de slippage de entrada
+        # Slippage cost = diferencia entre precio ideal y precio real * cantidad de crypto
+        entry_slippage_cost = abs(real_price - signal.price) * (entry_size_usdt / real_price)
+        
         # Paso 4: Si no hay posición abierta, crear nueva
         if self.current_position is None:
             self.current_position = Position(
@@ -175,14 +184,12 @@ class BacktestEngine:
             timestamp=signal.timestamp,
             price=real_price,
             size_usdt=entry_size_usdt,
-            fee=entry_fee
+            fee=entry_fee,
+            slippage_cost=entry_slippage_cost
         )
         
-        # Paso 6: Restar fee del capital disponible
-        # Nota: El capital de la entrada ya no está disponible porque
-        # está "bloqueado" en la posición, pero las fees sí se restan
-        # inmediatamente del capital total
-        self.capital -= entry_fee
+        # Paso 6: Restar tanto el capital de la entrada como la fee
+        self.capital -= (entry_size_usdt + entry_fee)
     
     def _handle_sell(self, signal: TradingSignal):
         """
@@ -205,16 +212,20 @@ class BacktestEngine:
         # Paso 4: Calcular fee de salida
         exit_fee = exit_value_usdt * self.fee_rate
         
+        # Paso 4.5: Calcular costo de slippage de salida
+        exit_slippage_cost = abs(signal.price - real_price) * total_crypto
+        
         # Paso 5: Calcular P&L
         total_cost = self.current_position.total_cost()
         total_entry_fees = self.current_position.total_fees_on_entries()
+        total_entry_slippage = self.current_position.total_slippage_on_entries()
         
         gross_pnl = exit_value_usdt - total_cost
-        net_pnl = gross_pnl - exit_fee  # Entry fees ya se restaron del capital
+        net_pnl = gross_pnl - exit_fee
         
         # Paso 6: Actualizar capital
-        # Recuperamos el capital que estaba en la posición más el P&L neto
-        self.capital += total_cost + net_pnl
+        # Recuperamos el valor neto de venta (ya descontada la exit_fee)
+        self.capital += (exit_value_usdt - exit_fee)
         
         # Paso 7: Guardar trade completado
         self.completed_trades.append({
@@ -229,6 +240,9 @@ class BacktestEngine:
             'total_entry_fees': total_entry_fees,
             'exit_fee': exit_fee,
             'total_fees': total_entry_fees + exit_fee,
+            'entry_slippage': total_entry_slippage,
+            'exit_slippage': exit_slippage_cost,
+            'total_slippage': total_entry_slippage + exit_slippage_cost,
             'gross_pnl': gross_pnl,
             'net_pnl': net_pnl,
             'capital_after': self.capital,
@@ -276,6 +290,7 @@ class BacktestEngine:
                 'symbol', 'entry_time', 'exit_time', 'num_entries',
                 'avg_entry_price', 'exit_price', 'total_cost', 'exit_value',
                 'total_entry_fees', 'exit_fee', 'total_fees',
+                'entry_slippage', 'exit_slippage', 'total_slippage',
                 'gross_pnl', 'net_pnl', 'capital_after', 'pnl_pct'
             ])
         

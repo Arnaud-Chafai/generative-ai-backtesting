@@ -52,12 +52,19 @@ class TradeMetricsCalculator:
         """
         df["entry_timestamp"] = pd.to_datetime(df["entry_timestamp"])
         df["exit_timestamp"] = pd.to_datetime(df["exit_timestamp"])
-        df["position_side"] = (
-            df["position_side"]
-            .astype(str)
-            .str.replace("SignalPositionSide.", "", regex=True)
-            .str.upper()
-        )
+        
+        # 🔧 Manejar position_side de forma más robusta
+        if "position_side" in df.columns:
+            df["position_side"] = (
+                df["position_side"]
+                .astype(str)
+                .str.replace("SignalPositionSide.", "", regex=False)
+                .str.upper()
+            )
+        else:
+            # Si no existe la columna, asumir LONG por defecto
+            df["position_side"] = "LONG"
+        
         return df
 
     def _add_duration_bars(self, df: pd.DataFrame) -> pd.DataFrame:

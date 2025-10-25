@@ -1,12 +1,11 @@
-import numpy as np
 import pandas as pd
-from metrics.trade_metrics import TradeMetricsCalculator
+import numpy as np
+
 
 class BacktestMetrics:
     def __init__(self, trade_data: pd.DataFrame, initial_capital: float):
         """
         Inicializa el cálculo de métricas del backtest.
-
         :param trade_data: DataFrame con los datos de cada trade (salida de TradeMetricsCalculator)
         :param initial_capital: Capital inicial utilizado en el backtest.
         """
@@ -14,14 +13,13 @@ class BacktestMetrics:
         self.initial_capital = initial_capital
         
         # Extraer la moneda del DataFrame, si está disponible
-        self.currency = trade_data["currency"].iloc[0] if not trade_data.empty and "currency" in trade_data.columns else "USDT"
-
+        self.currency = trade_data.get("currency", pd.Series(["USDT"])).iloc[0] if not trade_data.empty else "USDT"
+    
     def compute_all_metrics(self) -> dict:
         """
         Calcula todas las métricas del backtest y devuelve un diccionario con los resultados.
         """
         avg_bars_positive, avg_bars_negative = self.calculate_average_trade_durations_in_bars()
-
         return {
             **self.compute_general_summary(),
             **self.compute_profit_loss_analysis(),
@@ -32,66 +30,56 @@ class BacktestMetrics:
             "avg_bars_positive": avg_bars_positive,
             "avg_bars_negative": avg_bars_negative,
         }
-
+ 
     def compute_general_summary(self) -> dict:
         """
         Calcula el resumen general del backtest.
         """
         total_trades = len(self.trade_data)
-        winning_trades_net = self.trade_data[self.trade_data["net_profit_loss"] > 0]
-        losing_trades_net = self.trade_data[self.trade_data["net_profit_loss"] < 0]
-
-        # (A) Beneficio bruto total (suma de 'gross_profit_loss')
-        gross_profit = self.trade_data["gross_profit_loss"].sum()
-
-        # (B) Beneficio neto total (suma de 'net_profit_loss')
-        net_profit = self.trade_data["net_profit_loss"].sum()
-
-        # (C) Calcular costos totales (solo fees, ya que slippage está en el precio)
-        total_fees = self.trade_data["fees"].sum()
+        winning_trades_net = self.trade_data[self.trade_data["net_pnl"] > 0]
+        losing_trades_net = self.trade_data[self.trade_data["net_pnl"] < 0]
         
-        # ✅ FIX: No sumar slippage_cost como un costo separado, ya está incluido en el precio
-        # total_slippage_cost = self.trade_data["slippage_cost"].sum()
-        # total_costs = total_fees + total_slippage_cost
+        # (A) Beneficio bruto total (suma de 'gross_pnl')
+        gross_profit = self.trade_data["gross_pnl"].sum()
+        
+        # (B) Beneficio neto total (suma de 'net_pnl')
+        net_profit = self.trade_data["net_pnl"].sum()
+        
+        # (C) Calcular costos totales (solo fees, ya que slippage está en el precio)
+        total_fees = self.trade_data["total_fees"].sum()
         total_costs = total_fees  # ✅ Solo consideramos fees como costos
-
-        # (D) Verificación: net_profit debería ser igual a (gross_profit - total_fees)
-        # print(f"Verif -> net_profit calculado: {net_profit}, "
-        #       f"gross_profit - total_costs: {gross_profit - total_costs}")
-
+        
         # (E) Otras métricas
-        total_profit_net = winning_trades_net["net_profit_loss"].sum()
-        total_loss_net = abs(losing_trades_net["net_profit_loss"].sum())
+        total_profit_net = winning_trades_net["net_pnl"].sum()
+        total_loss_net = abs(losing_trades_net["net_pnl"].sum())
         profit_factor = total_profit_net / total_loss_net if total_loss_net > 0 else np.nan
-
+        
         # ✅ MEJORA: Mover las métricas relevantes al resumen general
         num_wins_net = len(winning_trades_net)
         num_loss_net = len(losing_trades_net)
         win_loss_ratio = (num_wins_net / num_loss_net) if num_loss_net > 0 else np.nan
-
+        
         expectancy = 0.0
         if len(self.trade_data) > 0:
-            avg_winning_trade = winning_trades_net["net_profit_loss"].mean() if not winning_trades_net.empty else 0
-            avg_losing_trade = losing_trades_net["net_profit_loss"].mean() if not losing_trades_net.empty else 0
+            avg_winning_trade = winning_trades_net["net_pnl"].mean() if not winning_trades_net.empty else 0
+            avg_losing_trade = losing_trades_net["net_pnl"].mean() if not losing_trades_net.empty else 0
             expectancy = ((avg_winning_trade * num_wins_net) -
                         (abs(avg_losing_trade) * num_loss_net)) / len(self.trade_data)
-
+        
         percent_profitable = 0.0
         if total_trades > 0:
             percent_profitable = (len(winning_trades_net) / total_trades) * 100
-            
+        
         # Calcular el ROI sobre el capital inicial
         roi_percentage = (net_profit / self.initial_capital) * 100 if self.initial_capital > 0 else 0
-
-        # ✅ Añadir información de moneda a los valores
+        
         result = {
-            "gross_profit": round(gross_profit, 2),      # Antes de costos, pero ya incluye slippage
-            "net_profit": round(net_profit, 2),          # Después de costos (fees)
-            "ROI": round(roi_percentage, 2),             # Retorno sobre inversión en porcentaje
+            "gross_profit": round(gross_profit, 2),
+            "net_profit": round(net_profit, 2),
+            "ROI": round(roi_percentage, 2),
             "total_trades": total_trades,
             "percent_profitable": round(percent_profitable, 2),
             "profit_factor": round(profit_factor, 2),
-            # ✅ NUEVAS MÉTRICAS EN EL RESUMEN
             "win_loss_ratio": round(win_loss_ratio, 2) if not np.isnan(win_loss_ratio) else "N/A",
             "expectancy": round(expectancy, 2),
         }
@@ -101,29 +89,28 @@ class BacktestMetrics:
     def compute_profit_loss_analysis(self) -> dict:
         """
         Métricas de beneficios/pérdidas a nivel bruto (sin comisiones).
-        Si deseas métricas netas, deberás cambiar a 'net_profit_loss'.
+        Si deseas métricas netas, deberás cambiar a 'net_pnl'.
         """
-
-        # 📌 Usamos 'gross_profit_loss' para separar bien lo BRUTO.
-        winning_trades_gross = self.trade_data[self.trade_data["gross_profit_loss"] > 0]
-        losing_trades_gross = self.trade_data[self.trade_data["gross_profit_loss"] < 0]
-
+        # 📌 Usamos 'gross_pnl' para separar bien lo BRUTO.
+        winning_trades_gross = self.trade_data[self.trade_data["gross_pnl"] > 0]
+        losing_trades_gross = self.trade_data[self.trade_data["gross_pnl"] < 0]
+        
         # Beneficio Bruto Total en trades ganadores
-        total_gross_profit = winning_trades_gross["gross_profit_loss"].sum()
-
+        total_gross_profit = winning_trades_gross["gross_pnl"].sum()
+        
         # Pérdida Bruta Total en trades perdedores
-        total_gross_loss = losing_trades_gross["gross_profit_loss"].sum()
-
+        total_gross_loss = losing_trades_gross["gross_pnl"].sum()
+        
         # 'gross_profit' = suma total bruta (ganancias + pérdidas)
         gross_profit = total_gross_profit + total_gross_loss
-
-        # Rachas ganadoras y perdedoras (en NET)
-        winning_trades_net = self.trade_data[self.trade_data["net_profit_loss"] > 0]
-        losing_trades_net = self.trade_data[self.trade_data["net_profit_loss"] < 0]
         
+        # Rachas ganadoras y perdedoras (en NET)
+        winning_trades_net = self.trade_data[self.trade_data["net_pnl"] > 0]
+        losing_trades_net = self.trade_data[self.trade_data["net_pnl"] < 0]
+   
         # ✅ FIX: Cálculo correcto de rachas consecutivas
         # Crear una serie con 1 para ganadores, 0 para perdedores
-        win_streak = (self.trade_data["net_profit_loss"] > 0).astype(int)
+        win_streak = (self.trade_data["net_pnl"] > 0).astype(int)
         
         # Inicializar contadores
         current_win_streak = 0
@@ -145,20 +132,20 @@ class BacktestMetrics:
                 current_win_streak = 0
                 # Actualizar máximo de racha perdedora si es necesario
                 max_loss_streak = max(max_loss_streak, current_loss_streak)
-
+        
         # Estadísticas de trades individuales (netas)
-        avg_trade_net_profit = self.trade_data["net_profit_loss"].mean()
-        avg_winning_trade = winning_trades_net["net_profit_loss"].mean() if not winning_trades_net.empty else 0
-        avg_losing_trade = losing_trades_net["net_profit_loss"].mean() if not losing_trades_net.empty else 0
-        largest_winning_trade = winning_trades_net["net_profit_loss"].max() if not winning_trades_net.empty else 0
-        largest_losing_trade = losing_trades_net["net_profit_loss"].min() if not losing_trades_net.empty else 0
-
+        avg_trade_net_profit = self.trade_data["net_pnl"].mean()
+        avg_winning_trade = winning_trades_net["net_pnl"].mean() if not winning_trades_net.empty else 0
+        avg_losing_trade = losing_trades_net["net_pnl"].mean() if not losing_trades_net.empty else 0
+        largest_winning_trade = winning_trades_net["net_pnl"].max() if not winning_trades_net.empty else 0
+        largest_losing_trade = losing_trades_net["net_pnl"].min() if not losing_trades_net.empty else 0
+        
         # Porcentaje de ganancia/pérdida media por trade
-        avg_winning_pct = (winning_trades_net["net_profit_loss"] / self.initial_capital * 100).mean() if not winning_trades_net.empty else 0
-        avg_losing_pct = (losing_trades_net["net_profit_loss"] / self.initial_capital * 100).mean() if not losing_trades_net.empty else 0
-
-        std_profit = self.trade_data["net_profit_loss"].std()
-
+        avg_winning_pct = (winning_trades_net["net_pnl"] / self.initial_capital * 100).mean() if not winning_trades_net.empty else 0
+        avg_losing_pct = (losing_trades_net["net_pnl"] / self.initial_capital * 100).mean() if not losing_trades_net.empty else 0
+        
+        std_profit = self.trade_data["net_pnl"].std()
+        
         return {
             # Bruto
             "total_gross_profit": round(total_gross_profit, 2),
@@ -176,20 +163,19 @@ class BacktestMetrics:
             "largest_losing_trade": round(largest_losing_trade, 2),
             "std_profit": round(std_profit, 2),
         }
-
+  
     def calculate_average_trade_durations_in_bars(self) -> tuple:
         """
         Calcula el promedio de duración en barras de los trades ganadores y perdedores.
         """
-        winning_trades = self.trade_data[self.trade_data["net_profit_loss"] > 0]
-        losing_trades = self.trade_data[self.trade_data["net_profit_loss"] < 0]
-
+        winning_trades = self.trade_data[self.trade_data["net_pnl"] > 0]
+        losing_trades = self.trade_data[self.trade_data["net_pnl"] < 0]
+        
         avg_bars_positive = winning_trades["duration_bars"].mean() if not winning_trades.empty else 0
         avg_bars_negative = losing_trades["duration_bars"].mean() if not losing_trades.empty else 0
-
+        
         return round(avg_bars_positive, 2), round(avg_bars_negative, 2)
-
-
+    
     def compute_drawdown_analysis(self) -> dict:
         """
         Calcula el análisis de drawdown: 
@@ -198,34 +184,33 @@ class BacktestMetrics:
         - Drawdown medio
         """
         cumulative_capital = self.trade_data["cumulative_capital"]
-
+        
         # 1. Calcular los picos de capital
         peak_capital = cumulative_capital.cummax()
-
+        
         # 2. Calcular el drawdown como la caída desde el pico
         drawdown = peak_capital - cumulative_capital
-
+        
         # 3. Máximo Drawdown (valor absoluto)
         max_drawdown = drawdown.max()
-
+        
         # 4. Porcentaje de Drawdown Máximo respecto al pico máximo
         max_drawdown_pct = (max_drawdown / peak_capital.max()) * 100 if peak_capital.max() > 0 else 0
-
+        
         # 5. Duración del Drawdown: Tiempo entre el máximo drawdown y la recuperación del capital
         drawdown_periods = (drawdown > 0).astype(int)  # 1 si hay drawdown, 0 si no
         drawdown_duration = drawdown_periods.groupby((drawdown_periods != drawdown_periods.shift()).cumsum()).cumsum().max()
-
+        
         # 6. 📌 Drawdown Medio 📌 (Promedio de todos los drawdowns registrados)
         avg_drawdown = drawdown.mean()
-
+        
         return {
             "max_drawdown": round(max_drawdown, 2),
             "max_drawdown_pct": round(max_drawdown_pct, 2),
             "drawdown_duration": int(drawdown_duration),
             "avg_drawdown": round(avg_drawdown, 2),
         }
-
-
+ 
     def compute_time_statistics(self) -> dict:
         """
         Calcula estadísticas detalladas relacionadas con el tiempo de las operaciones.
@@ -233,12 +218,12 @@ class BacktestMetrics:
         """
         # 1. Convertir timestamps a segundos para calcular duración en tiempo real
         self.trade_data["trade_duration_seconds"] = (
-            self.trade_data["exit_timestamp"] - self.trade_data["entry_timestamp"]
+            pd.to_datetime(self.trade_data["exit_time"]) - pd.to_datetime(self.trade_data["entry_time"])
         ).dt.total_seconds()
-
-        winning_trades = self.trade_data[self.trade_data["net_profit_loss"] > 0]
-        losing_trades = self.trade_data[self.trade_data["net_profit_loss"] < 0]
-
+        
+        winning_trades = self.trade_data[self.trade_data["net_pnl"] > 0]
+        losing_trades = self.trade_data[self.trade_data["net_pnl"] < 0]
+        
         # 2. Duración promedio de trades ganadores y perdedores (en minutos)
         avg_winning_trade_duration_minutes = (
             winning_trades["trade_duration_seconds"].mean() / 60 if not winning_trades.empty else 0
@@ -250,7 +235,7 @@ class BacktestMetrics:
         # Calcular duración máxima y mínima de trades
         max_trade_duration_minutes = self.trade_data["trade_duration_seconds"].max() / 60 if not self.trade_data.empty else 0
         min_trade_duration_minutes = self.trade_data["trade_duration_seconds"].min() / 60 if not self.trade_data.empty else 0
-
+        
         # 3. Media de barras en pérdida y ganancia para trades ganadores
         avg_bars_in_loss_winners = (
             winning_trades["bars_in_loss"].mean() if not winning_trades.empty else 0
@@ -258,7 +243,7 @@ class BacktestMetrics:
         avg_bars_in_profit_winners = (
             winning_trades["bars_in_profit"].mean() if not winning_trades.empty else 0
         )
-
+        
         # 4. Media de barras en pérdida y ganancia para trades perdedores
         avg_bars_in_loss_losers = (
             losing_trades["bars_in_loss"].mean() if not losing_trades.empty else 0
@@ -266,13 +251,13 @@ class BacktestMetrics:
         avg_bars_in_profit_losers = (
             losing_trades["bars_in_profit"].mean() if not losing_trades.empty else 0
         )
-
+        
         # 5. Calcular el tiempo total en el mercado
         total_time_in_trades = self.trade_data["trade_duration_seconds"].sum()
         
         # 6. Calcular duración total del backtest
-        backtest_start = self.trade_data["entry_timestamp"].min()
-        backtest_end = self.trade_data["exit_timestamp"].max()
+        backtest_start = pd.to_datetime(self.trade_data["entry_time"]).min()
+        backtest_end = pd.to_datetime(self.trade_data["exit_time"]).max()
         total_backtest_duration = (backtest_end - backtest_start).total_seconds()
         
         # Convertir a formato más legible (días, horas, minutos)
@@ -330,14 +315,14 @@ class BacktestMetrics:
                     timeframe_hours = 24 * 30  # 1 mes ≈ 720 horas
                 else:
                     timeframe_hours = 1/60  # Valor por defecto: 1 minuto
-        
+
         # Convertir periodos de barras a minutos usando el timeframe
         bar_to_minutes = timeframe_hours * 60
         
         # 10. Duración media en unidades de timeframe
         avg_winning_trade_duration_bars = avg_winning_trade_duration_minutes / bar_to_minutes if bar_to_minutes > 0 else 0
         avg_losing_trade_duration_bars = avg_losing_trade_duration_minutes / bar_to_minutes if bar_to_minutes > 0 else 0
-
+        
         return {
             "backtest_duration": backtest_duration_str,
             "avg_winning_trade_duration_min": round(avg_winning_trade_duration_minutes, 2),
@@ -357,7 +342,7 @@ class BacktestMetrics:
             "timeframe_hours": timeframe_hours,
             "bar_to_minutes": bar_to_minutes,
         }
-
+    
     def compute_performance_ratios(self) -> dict:
         """
         Calcula las métricas de rendimiento:
@@ -366,50 +351,51 @@ class BacktestMetrics:
         - Factor de Recuperación
         - Índice de TradeStation (TS Index)
         """
-        returns = self.trade_data["net_profit_loss"]  # Retornos por trade
+        returns = self.trade_data["net_pnl"]  # Retornos por trade
         mean_return = returns.mean()
         std_return = returns.std()  # Desviación estándar de los retornos
         downside_std = returns[returns < 0].std()  # Desviación estándar de pérdidas
-
+        
         # 1. Índice de Sharpe: Exceso de retorno sobre la volatilidad total
         sharpe_ratio = mean_return / std_return if std_return > 0 else np.nan
-
+        
         # 2. Ratio de Sortino: Exceso de retorno sobre la volatilidad de pérdidas
         sortino_ratio = mean_return / downside_std if downside_std > 0 else np.nan
-
+        
         # 3. Factor de Recuperación: Beneficio Neto / Máximo Drawdown
         drawdown_analysis = self.compute_drawdown_analysis()
         max_drawdown = drawdown_analysis["max_drawdown"]
         recovery_factor = (self.compute_general_summary()["net_profit"] / max_drawdown) if max_drawdown > 0 else np.nan
-
+        
         return {
             "sharpe_ratio": round(sharpe_ratio, 2),
             "sortino_ratio": round(sortino_ratio, 2),
             "recovery_factor": round(recovery_factor, 2),
         }
-
+ 
     def compute_operational_costs(self) -> dict:
         """
         Calcula los costos operacionales del backtest:
         """
-        total_fees = self.trade_data["fees"].sum()
-        total_slippage_cost = self.trade_data["slippage_cost"].sum()
+        total_fees = self.trade_data["total_fees"].sum()
+        total_slippage_cost = self.trade_data["slippage_cost"].sum() if "slippage_cost" in self.trade_data.columns else 0
         total_costs = total_fees  # ✅ FIX: Solo fees para cálculos de P&L
-
+        
         # Tomamos 'gross_profit' de la sumatoria global (compute_general_summary)
         gross_profit_global = self.compute_general_summary()["gross_profit"]
+        
         # Evitar división por cero
         if abs(gross_profit_global) > 1e-9:
             costs_as_pct_of_gross_profit = (total_fees / abs(gross_profit_global)) * 100
         else:
             costs_as_pct_of_gross_profit = np.nan
-
+        
         # Costos por trade
         avg_fee_per_trade = total_fees / len(self.trade_data) if len(self.trade_data) > 0 else 0
         
         # Costos como porcentaje del capital inicial
         fees_pct_of_capital = (total_fees / self.initial_capital) * 100 if self.initial_capital > 0 else 0
-
+        
         return {
             "total_fees": round(total_fees, 2),
             "total_slippage_cost": round(total_slippage_cost, 2),  # Solo informativo
