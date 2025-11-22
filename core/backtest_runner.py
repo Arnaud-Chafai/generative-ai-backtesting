@@ -131,13 +131,13 @@ class BacktestRunner:
         )
 
     def plot_trades(
-        self, 
-        interval_hours: int = 5, 
+        self,
+        interval_hours: int = 5,
         number_visualisation: int = None
     ):
         """
         Genera gráficos de los trades.
-        
+
         Args:
             interval_hours: Horas por gráfico (default: 5)
             number_visualisation: Límite de gráficos (None = todos)
@@ -146,4 +146,38 @@ class BacktestRunner:
         viz.plot_trades(
             interval_hours=interval_hours,
             number_visualisation=number_visualisation
+        )
+
+    def plot_dashboards(
+        self,
+        modules: list = None,
+        output_folder: str = "dashboards",
+        show: bool = True
+    ):
+        """
+        Genera dashboards de análisis.
+
+        Args:
+            modules: Lista de módulos a incluir. Disponibles:
+                - performance, time_chart, temporal, metrics_distribution,
+                - metrics_boxplot, mae_scatter, mfe_scatter, risk_reward_scatter,
+                - volatility_scatter, profit_efficiency_scatter
+                Si es None, genera todos.
+            output_folder: Carpeta donde guardar los dashboards
+            show: Si True, muestra los gráficos
+
+        Returns:
+            dict: Diccionario con las figuras generadas
+        """
+        if self.metrics is None:
+            raise ValueError("⚠️ Primero ejecuta run()")
+
+        from visualization.dashboard_manager import create_dashboard
+
+        return create_dashboard(
+            strategy=self.strategy,
+            df_trade_metrics=self.metrics.trade_metrics_df,
+            modules=modules,
+            output_folder=output_folder,
+            show=show
         )

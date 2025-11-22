@@ -14,16 +14,17 @@ from utils.timeframe import Timeframe
 class BaseStrategy(ABC):
     def __init__(
         self,
-        market: MarketType,  
+        market: MarketType,
         symbol: str,
         strategy_name: str,
         timeframe: Timeframe,
         exchange: Optional[str] = None,
         initial_capital: float = 1000.0,
         slippage: bool = True,
-        fees: bool = True
+        fees: bool = True,
+        data: Optional[pd.DataFrame] = None
     ):
-        if market not in {MarketType.CRYPTO, MarketType.FUTURES, MarketType.STOCKS}:
+        if market not in {MarketType.CRYPTO, MarketType.FUTURES}:
             raise ValueError(f"❌ Mercado no soportado: {market}. Solo 'Crypto', 'Futures' o 'Stocks'.")
 
         self.market = market
@@ -49,35 +50,42 @@ class BaseStrategy(ABC):
             self.market_definition = None
             self.slippage_value = 1
 
-        # Construir ruta absoluta desde la ubicación del archivo
-        current_file = os.path.abspath(__file__)
-        strategies_dir = os.path.dirname(current_file)
-        backtesting_dir = os.path.dirname(strategies_dir)
+        # ✅ NUEVA LÓGICA: Soportar datos inyectados O cargar del disco
+        if data is not None:
+            # Modo inyectado (optimizador)
+            self.market_data = data
+            print(f"✓ Datos inyectados: {len(self.market_data)} candles")
+            print(f"  Período: {self.market_data.index[0]} a {self.market_data.index[-1]}\n")
+        else:
+            # Modo legacy (cargar del disco)
+            current_file = os.path.abspath(__file__)
+            strategies_dir = os.path.dirname(current_file)
+            backtesting_dir = os.path.dirname(strategies_dir)
 
-        # Construir ruta a data/laboratory_data
-        data_path = os.path.join(
-            backtesting_dir,
-            "data",
-            "laboratory_data",
-            symbol,
-            f"Timeframe.{timeframe.name}.csv"
-        )
-
-        print(f"🔍 Buscando datos en: {data_path}")
-
-        if not os.path.exists(data_path):
-            raise FileNotFoundError(
-                f"❌ No se encontró el archivo:\n{data_path}\n\n"
-                f"Verifica que existe:\n"
-                f"  - backtesting/data/laboratory_data/{symbol}/Timeframe.{timeframe.name}.csv"
+            # Construir ruta a data/laboratory_data
+            data_path = os.path.join(
+                backtesting_dir,
+                "data",
+                "laboratory_data",
+                symbol,
+                f"Timeframe.{timeframe.name}.csv"
             )
 
-        self.market_data = pd.read_csv(data_path, index_col="Time", parse_dates=["Time"])
-        if self.market_data.empty:
-            raise ValueError(f"❌ El archivo {data_path} no contiene datos.")
+            print(f"🔍 Buscando datos en: {data_path}")
 
-        print(f"✅ Datos cargados: {len(self.market_data)} candles")
-        print(f"   Período: {self.market_data.index[0]} a {self.market_data.index[-1]}\n")
+            if not os.path.exists(data_path):
+                raise FileNotFoundError(
+                    f"❌ No se encontró el archivo:\n{data_path}\n\n"
+                    f"Verifica que existe:\n"
+                    f"  - backtesting/data/laboratory_data/{symbol}/Timeframe.{timeframe.name}.csv"
+                )
+
+            self.market_data = pd.read_csv(data_path, index_col="Time", parse_dates=["Time"])
+            if self.market_data.empty:
+                raise ValueError(f"❌ El archivo {data_path} no contiene datos.")
+
+            print(f"✅ Datos cargados: {len(self.market_data)} candles")
+            print(f"   Período: {self.market_data.index[0]} a {self.market_data.index[-1]}\n")
 
     # ========================================================================
     # NUEVO SISTEMA SIMPLIFICADO

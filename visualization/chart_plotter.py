@@ -104,7 +104,7 @@ class BacktestVisualizer:
             # Indicadores (si existen)
             if "EMA_20" in df_subset.columns:
                 apds.append(
-                    mpf.make_addplot(df_subset["EMA_20"], color="blue", width=1.5)
+                    mpf.make_addplot(df_subset["EMA_20"], color="red", width=1.5)
                 )
             
             # Señales de entrada (verde hacia arriba)

@@ -52,7 +52,7 @@ def create_performance_dashboard(strategy, df_trade_metrics, figsize=(12, 8), sa
         "symbol": getattr(strategy, "symbol", ""),
         "timeframe": str(getattr(strategy, "timeframe", "")).replace("Timeframe.", ""),
         "exchange": str(getattr(strategy, "exchange", "")).replace("ExchangeName.", ""),
-        "initial_capital": getattr(strategy.capital_manager, "initial_capital", 10000),
+        "initial_capital": getattr(strategy, "initial_capital", 10000),
         "currency": "USDT"  # Por defecto, se puede cambiar si la estrategia usa otra moneda
     }
     

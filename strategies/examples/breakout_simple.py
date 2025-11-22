@@ -35,17 +35,18 @@ class BreakoutSimple(BaseStrategy):
             exchange=exchange,
             **kwargs
         )
-        
-        self.lookback_period = lookback_period
-        self.position_size_pct = position_size_pct
-        
+
+        # ✅ Asegurar tipos correctos (pandas.rolling requiere int)
+        self.lookback_period = int(lookback_period)
+        self.position_size_pct = float(position_size_pct)
+
         # Calcular máximos y mínimos rodantes
         self.market_data['High_Max'] = self.market_data['High'].rolling(
-            window=lookback_period
+            window=self.lookback_period
         ).max()
-        
+
         self.market_data['Low_Min'] = self.market_data['Low'].rolling(
-            window=lookback_period
+            window=self.lookback_period
         ).min()
         
         print(f"📊 Estrategia Breakout configurada:")
