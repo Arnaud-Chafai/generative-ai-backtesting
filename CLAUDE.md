@@ -1,387 +1,104 @@
-## 📊 ESTADO ACTUAL DEL PROYECTO - NOVIEMBRE 2025
+## Backtesting Framework - Estado del Proyecto
 
-**Última Actualización**: Noviembre 2025 (Fase 3 COMPLETADA ✅)
+**Ultima actualizacion**: Febrero 2026
 
-Para un resumen ejecutivo, ver: **[docs/FASE3_RESUMEN.md](docs/FASE3_RESUMEN.md)**
-
-### ✅ LO QUE HEMOS LOGRADO (Refactorización Completa)
-
-#### 🏗️ **Motor de Backtest - 100% COMPLETADO**
-
-**Antes (Sistema Viejo):**
-- ❌ 346 líneas enmarañadas en un solo archivo
-- ❌ Múltiples responsabilidades mezcladas
-- ❌ Difícil de debuggear
-- ❌ Código duplicado
-- ❌ Sin separación de concerns
-
-**Ahora (Sistema Nuevo - Simplificado):**
-```
-core/
-├── simple_backtest_engine.py     ✅ 280 líneas, limpio y funcional
-├── backtest_runner.py            ✅ Orquestador completo
-└── [TODO] position_manager.py    ⏳ No necesario (ya en engine)
-```
-
-**Funcionalidades:**
-- ✅ Ejecución de señales (BUY/SELL)
-- ✅ Múltiples entradas (DCA/promediado)
-- ✅ Slippage correctamente aplicado y visible
-- ✅ Fees (entry + exit) calculados
-- ✅ P&L bruto y neto
-- ✅ Capital tracking preciso
-
----
-
-#### 📊 **Sistema de Métricas - 100% COMPLETADO**
-
-```
-metrics/
-├── trade_metrics.py           ✅ Métricas por trade (MAE, MFE, etc.)
-├── portfolio_metrics.py       ✅ Métricas de portfolio (Sharpe, Sortino, etc.)
-└── metrics_aggregator.py      ✅ Combina todo automáticamente
-```
-
-**Métricas Disponibles:**
-- ✅ **Por Trade:** MAE, MFE, duration, bars_in_profit/loss, profit_efficiency, risk_reward
-- ✅ **Portfolio:** Sharpe, Sortino, Profit Factor, Max Drawdown, Recovery Factor, Expectancy
-- ✅ **Operacionales:** Total fees, slippage cost, costs as % of profit
-- ✅ **Temporales:** Time in market, trades per day, duración promedio
-
----
-
-#### 🎯 **Modelos y Arquitectura - 100% COMPLETADO**
-
-```
-models/
-├── enums.py                   ✅ SignalType, MarketType, etc.
-├── simple_signals.py          ✅ TradingSignal (sistema nuevo)
-├── signals.py                 ❌ BORRAR (StrategySignal viejo)
-├── _deprecateds_ignals.py     ❌ BORRAR
-└── markets/
-    ├── base_market.py         ✅ Clase base
-    ├── crypto_market.py       ✅ CryptoMarketDefinition
-    └── futures_market.py      ❌ BORRAR (usa sistema viejo)
-
-└── trades/                    ❌ BORRAR COMPLETO (sistema viejo)
-```
-
----
-
-#### 🧪 **Estrategias - 100% ACTUALIZADO**
-
-```
-strategies/
-├── base_strategy.py           ✅ Actualizado para sistema nuevo
-└── examples/
-    └── breakout_simple.py     ✅ Funcional con motor nuevo
-```
-
-**Cambios aplicados:**
-- ✅ Eliminados métodos viejos (`create_crypto_signal()`, etc.)
-- ✅ Solo sistema simplificado (`generate_simple_signals()`)
-- ✅ Usa `TradingSignal` en lugar de `StrategySignal`
-
----
-
-#### 📓 **Notebooks - ULTRA SIMPLIFICADO**
-
-**Antes:** 200+ líneas de setup manual
-**Ahora:** 3 líneas para backtest completo
-
-```python
-runner = BacktestRunner(strategy)
-runner.run()
-runner.print_summary()
-# df_trade_metrics disponible automáticamente
-```
-
----
-
-#### 📈 **Visualización - 100% COMPLETADO (FASE 3 ✅)**
-
-```
-visualization/
-├── chart_plotter.py           ✅ BacktestVisualizer integrado
-├── dashboard_manager.py       ✅ Coordinador completo
-└── dashboards/                ✅ 10 dashboards funcionales
-    ├── performance_dashboard.py      ✅ Dashboard general
-    ├── temporal_heatmaps.py          ✅ Análisis temporal
-    ├── metrics_distribution.py       ✅ Distribuciones
-    ├── metrics_boxplot.py            ✅ Boxplots
-    ├── scatter_metrics.py            ✅ Scatter plots (5)
-    └── week_month_barchart.py        ✅ Análisis día/mes
-
-Integración en BacktestRunner:
-├── runner.plot_trades()       ✅ Gráficos de velas con entrada/salida
-└── runner.plot_dashboards()   ✅ 10 dashboards personalizables
-```
-
----
-
-### ✅ LIMPIEZA COMPLETADA
-
-**Archivos Eliminados (Sistema Viejo):**
-- ✅ `models/signals.py` → BORRADO
-- ✅ `models/_deprecateds_ignals.py` → BORRADO
-- ✅ `models/trades/` → BORRADO (carpeta completa)
-- ✅ `models/markets/futures_market.py` → BORRADO
-
----
-
-## 🎯 ARQUITECTURA ACTUAL (LIMPIA)
+## Arquitectura
 
 ```
 backtesting/
-├── core/                           ✅ MOTOR COMPLETO
-│   ├── simple_backtest_engine.py
-│   └── backtest_runner.py
-│
-├── models/                         ✅ MODELOS LIMPIOS
-│   ├── enums.py
-│   ├── simple_signals.py
-│   └── markets/
-│       ├── base_market.py
-│       └── crypto_market.py
-│
-├── metrics/                        ✅ MÉTRICAS COMPLETAS
-│   ├── trade_metrics.py
-│   ├── portfolio_metrics.py
-│   └── metrics_aggregator.py
-│
-├── strategies/                     ✅ BASE + EJEMPLOS
-│   ├── base_strategy.py
-│   └── examples/
-│       └── breakout_simple.py
-│
-├── config/                         ✅ CONFIGURACIONES
-│   └── market_configs/
-│       ├── crypto_config.py
-│       └── futures_config.py
-│
-├── data/                           ✅ DATA HANDLING
-│   ├── loaders/
-│   └── preparation/
-│
-├── utils/                          ✅ UTILIDADES
-│   └── timeframe.py
-│
-├── visualization/                  ✅ INTEGRADO (FASE 3)
-│   ├── chart_plotter.py           ✅ BacktestVisualizer
-│   ├── dashboard_manager.py       ✅ Coordinador de 10 dashboards
-│   └── dashboards/                ✅ 10 visualizaciones funcionales
-│       ├── performance_dashboard.py
-│       ├── temporal_heatmaps.py
-│       ├── metrics_distribution.py
-│       ├── metrics_boxplot.py
-│       ├── scatter_metrics.py
-│       └── week_month_barchart.py
-│
-├── optimization/                   ✅ OPTIMIZACIÓN (FASE 4a)
-│   ├── __init__.py                ✅ Exports públicos
-│   ├── optimizer.py               ✅ ParameterOptimizer (Grid Search)
-│   ├── results.py                 ✅ OptimizationResult dataclass
-│   └── visualizer.py              ✅ OptimizationPlotter (Superficies 3D)
-│
-└── notebooks/                      ✅ FLUJO COMPLETO
-    ├── prueba_3.ipynb             ✅ 10 celdas, backtest + viz + dashboards
-    ├── prueba_optimizer.ipynb     ✅ Optimización de parámetros
-    └── prueba_optimizer_visualization.ipynb  ✅ Visualización 3D
+├── core/                    Motor de backtest + orquestador
+├── models/                  Enums y señales de trading (TradingSignal)
+├── config/
+│   ├── market_configs/      Datos estaticos de mercados (fees, slippage)
+│   └── markets/             Clases Pydantic de mercados
+├── data/
+│   ├── loaders/             Providers de datos (CSV, MT5, ccxt/Binance)
+│   └── preparation/         Limpieza y transformacion de datos
+├── metrics/                 Metricas por trade y portfolio
+├── strategies/              BaseStrategy + ejemplos
+├── optimization/            Optimizacion de parametros (Grid Search)
+├── visualization/
+│   ├── chart_plotter.py     Charts de velas (estatico + interactivo)
+│   ├── dashboard_manager.py Coordinador de dashboards
+│   └── dashboards/          10 dashboards de analisis
+├── utils/                   Timeframe enum + utilidades temporales
+├── tests/                   Tests unitarios (pytest)
+└── notebooks/               Notebooks de ejemplo
 ```
 
----
+## Documentacion por modulo
 
-## 🚀 PRÓXIMOS PASOS LÓGICOS
+Cada modulo tiene su propio CLAUDE.md con detalle completo:
 
-### **FASE 3: Visualización Completa** ✅ COMPLETADO
+| Modulo | Doc | Contenido principal |
+|--------|-----|-------------------|
+| [core/](core/CLAUDE.md) | BacktestEngine, BacktestRunner | Motor de ejecucion y orquestador |
+| [models/](models/CLAUDE.md) | SignalType, TradingSignal | Enums y señales de dominio |
+| [config/market_configs/](config/market_configs/CLAUDE.md) | CRYPTO_CONFIG, FUTURES_CONFIG | Fees, slippage, tick_size por exchange |
+| [data/loaders/](data/loaders/CLAUDE.md) | CSVDataProvider, CcxtDataProvider | Carga de datos (CSV, MT5, Binance) |
+| [data/preparation/](data/preparation/CLAUDE.md) | DataCleaner, DataTransformer | Limpieza y enriquecimiento de datos |
+| [metrics/](metrics/CLAUDE.md) | TradeMetrics, BacktestMetrics | MAE, MFE, Sharpe, drawdown, etc. |
+| [strategies/](strategies/CLAUDE.md) | BaseStrategy | Como crear estrategias nuevas |
+| [optimization/](optimization/CLAUDE.md) | ParameterOptimizer | Grid Search + visualizacion 3D |
+| [visualization/](visualization/CLAUDE.md) | Charts + dashboards | Graficos de velas y 10 dashboards |
+| [visualization/dashboards/](visualization/dashboards/CLAUDE.md) | 10 dashboards | Detalle de cada dashboard |
+| [utils/](utils/CLAUDE.md) | Timeframe | Enum de timeframes + constantes |
+| [tests/](tests/CLAUDE.md) | pytest | Tests existentes y cobertura |
 
-Ver: **[docs/FASE3_RESUMEN.md](docs/FASE3_RESUMEN.md)**
-
-Lo completado:
-- ✅ Integración de `chart_plotter.py` al `BacktestRunner`
-- ✅ 10 dashboards funcionales y personalizables
-- ✅ Notebook con flujo end-to-end
-- ✅ Corrección de errores de compatibilidad
-- ✅ Documentación actualizada
-
----
-
-### **FASE 4: Optimización de Parámetros** ✅ (PARCIALMENTE COMPLETADO - v1.0)
-
-#### 1. **Optimizador de Parámetros**
-```python
-# Objetivo:
-optimizer = ParameterOptimizer(strategy_class=BreakoutSimple)
-best_params = optimizer.optimize(
-    param_ranges={
-        'lookback_period': [10, 20, 30, 50],
-        'position_size_pct': [0.3, 0.5, 0.7]
-    },
-    metric='sharpe_ratio'
-)
-```
-
-#### 2. **Comparador de Estrategias**
-```python
-# Objetivo:
-comparator = StrategyComparator()
-comparator.add_strategy('Breakout', breakout_runner)
-comparator.add_strategy('MA Crossover', ma_runner)
-comparator.compare(metrics=['roi', 'sharpe', 'max_dd'])
-```
-
----
-
-### **FASE 5: Estrategias Adicionales** (Futuro)
-
-**Crear más ejemplos:**
-```
-strategies/examples/
-├── breakout_simple.py           ✅ Ya existe
-├── ma_crossover.py              ⏳ Crear
-├── rsi_strategy.py              ⏳ Crear
-├── bollinger_bands.py           ⏳ Crear
-└── combined_strategy.py         ⏳ Crear
-```
-
----
-
-### **FASE 6: Live Trading Bridge** (Largo Plazo)
-
-**Conectar con MT5 o exchange real:**
-- Adaptar señales del backtest a órdenes reales
-- Sistema de gestión de riesgo en vivo
-- Logging y monitoreo
-
----
-
-## 📋 FASE 4a: Grid Search - ✅ COMPLETADO
-
-### **Implementación Realizada:**
+## Flujo principal
 
 ```python
-# Flujo actual (100% funcional):
-optimizer = ParameterOptimizer(
-    strategy_class=BreakoutSimple,
-    market_data=df,  # ✅ Inyección de datos
-    symbol='BTC'
-)
-results = optimizer.optimize(
-    param_ranges={
-        'lookback_period': [10, 20, 30, 50],
-        'position_size_pct': [0.3, 0.5, 0.7]
-    },
-    metric='sharpe_ratio'
-)
-best = optimizer.get_best_params(min_trades=20)  # ✅ Filtro anti-fantasma
+# 1. Cargar datos
+from data.loaders.data_provider import CcxtDataProvider
+provider = CcxtDataProvider(symbol="BTC/USDT", timeframe="5m", start_date="2024-01-01")
+provider.save_to_csv()
+
+# 2. Crear estrategia
+strategy = BreakoutSimple(symbol='BTC', exchange='Binance', timeframe=Timeframe.M5)
+
+# 3. Ejecutar backtest
+runner = BacktestRunner(strategy)
+runner.run()
+runner.print_summary()
+
+# 4. Visualizar
+runner.plot_trades()       # chart de velas interactivo
+runner.plot_dashboards()   # 10 dashboards de analisis
+
+# 5. Optimizar
+optimizer = ParameterOptimizer(strategy_class=BreakoutSimple, market_data=df, symbol='BTC')
+results = optimizer.optimize(param_ranges={...}, metric='sharpe_ratio')
 ```
 
-**Tareas Completadas:**
-1. ✅ Crear `optimization/` módulo (no `core/`)
-2. ✅ Implementar grid search con `itertools.product`
-3. ✅ Inyección de datos (200x más rápido)
-4. ✅ Validación inteligente de parámetros
-5. ✅ Barra de progreso con `tqdm`
-6. ✅ Filtro anti-fantasma (`min_trades`)
-7. ✅ Export a CSV
-8. ✅ 7 tests comprensivos
-9. ✅ Documentación completa (OPTIMIZER_GUIDE.md)
-10. ✅ Notebook ejemplo end-to-end
-11. ✅ Visualización 3D de resultados (`OptimizationPlotter`)
-12. ✅ Superficies 3D estilo MATLAB (colormap rojo → azul)
+## Fases completadas
 
-**Tiempo real:** 3.5 horas
+| Fase | Descripcion | Estado |
+|------|-------------|--------|
+| 1-2 | Motor de backtest + metricas | ✅ |
+| 3 | Visualizacion (10 dashboards + charts) | ✅ |
+| 4a | Grid Search optimizer + viz 3D | ✅ |
 
----
+## Roadmap
 
-## 🚀 PRÓXIMAS FASES (Roadmap)
+| Fase | Descripcion | Prioridad |
+|------|-------------|-----------|
+| 4b | Random Search + Bayesian optimization | Alta |
+| 4c | Walk-Forward testing | Media |
+| 4d | Multiprocessing | Baja |
+| 5 | Mas estrategias (RSI, Bollinger, etc.) | Media |
+| 6 | Comparador de estrategias | Media |
+| 7 | Live Trading Bridge | Futuro |
 
-### **FASE 4b: Random Search + Bayesian (v1.5 - SIGUIENTE)**
+## Documentacion adicional
 
-```python
-# Random Search (para espacios grandes)
-results = optimizer.optimize({...}, method='random', n_iter=50)
+- [docs/FASE3_RESUMEN.md](docs/FASE3_RESUMEN.md) — Visualizacion completada
+- [docs/FASE4_RESUMEN.md](docs/FASE4_RESUMEN.md) — Parameter Optimizer v1.0
+- [docs/OPTIMIZER_GUIDE.md](docs/OPTIMIZER_GUIDE.md) — Guia completa del optimizador
 
-# Bayesian Optimization (más inteligente)
-results = optimizer.optimize({...}, method='bayesian', n_calls=50)
-```
+## Notas tecnicas
 
-**Beneficio:** Espacios grandes (>100 combinaciones) sin exploración exhaustiva
-
-**Tiempo estimado:** 4-6 horas
-
----
-
-### **FASE 4c: Walk-Forward Testing (v2.0)**
-
-```python
-walk_forward = WalkForwardOptimizer(strategy, market_data, window_size='1y')
-results = walk_forward.optimize(param_ranges, metric='sharpe_ratio')
-```
-
-**Beneficio:** Validar robustez temporal, evitar overfitting
-
-**Tiempo estimado:** 3-4 horas
-
----
-
-### **FASE 4d: Multiprocessing (v2.0)**
-
-```python
-results = optimizer.optimize({...}, n_jobs=4)  # 4x más rápido
-```
-
-**Beneficio:** Paralelizar backtests
-
----
-
-### **FASE 4e: Genetic Algorithms (v3.0)**
-
-```python
-results = optimizer.optimize({...}, method='genetic', population_size=20)
-```
-
-**Beneficio:** Espacios complejos, búsqueda global
-
----
-
-## 📊 Métodos Disponibles vs Planificados
-
-| Versión | Método | Estado | Velocidad | Calidad |
-|---------|--------|--------|-----------|---------|
-| v1.0 | Grid Search | ✅ HECHO | ⭐ | ⭐⭐⭐ |
-| v1.5 | Random Search | ⏳ SIGUIENTE | ⭐⭐ | ⭐⭐ |
-| v1.5 | Bayesian | ⏳ SIGUIENTE | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| v2.0 | Walk-Forward | ⏳ FUTURO | ⭐ | ⭐⭐⭐⭐⭐ |
-| v2.0 | Multiprocessing | ⏳ FUTURO | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| v3.0 | Genetic | ⏳ FUTURO | ⭐⭐ | ⭐⭐⭐⭐ |
-
----
-
-## 🎯 PRIORIDADES - FASE 4+5
-
-| Tarea | Prioridad | Versión | Tiempo | Impacto |
-|-------|-----------|---------|--------|---------|
-| **Grid Search** | 🔴 DONE | 1.0 | ✅ 3.5h | Alto |
-| Random + Bayesian | 🔴 ALTA | 1.5 | 4-6h | Alto |
-| Walk-Forward | 🟡 MEDIA | 2.0 | 3-4h | Muy Alto |
-| Comparador Estrategias | 🟡 MEDIA | 4.0 | 2-3h | Medio |
-| Más estrategias | 🟡 MEDIA | 5.0 | 1-2h c/u | Medio |
-| Multiprocessing | 🟢 BAJA | 2.0 | 2-3h | Medio |
-| Genetic Algorithms | 🟢 BAJA | 3.0 | 2-3h | Medio |
-| Dashboard Interactivo | 🟢 BAJA | 6.0 | 1-2 días | Bajo |
-| Live Trading Bridge | 🔵 MUY BAJA | 7.0 | 1 semana | Alto (futuro)
-
----
-
-## 📚 Documentación Actualizada
-
-- **[README.md](README.md)** → Estado general (v0.3.0)
-- **[FASE3_RESUMEN.md](docs/FASE3_RESUMEN.md)** → Visualización completada
-- **[FASE4_RESUMEN.md](docs/FASE4_RESUMEN.md)** → Parameter Optimizer (v1.0)
-- **[OPTIMIZER_GUIDE.md](docs/OPTIMIZER_GUIDE.md)** → Guía completa + roadmap futuro
-
----
-
-**Estado Actual:** FASE 4a ✅ COMPLETADO
-**Siguiente:** FASE 4b - Random Search + Bayesian (v1.5) 🎛️
+- Solo soporta posiciones LONG actualmente
+- `BacktestRunner` hardcodea `get_crypto_config()` (solo crypto)
+- `futures_config.py` existe pero no tiene consumidor activo
+- `Timeframe` enum vive en `utils/` (conceptualmente es un enum de dominio)
+- `set_style()` esta duplicada en 3 archivos de dashboards
