@@ -1,7 +1,4 @@
 from data.loaders.data_provider import CSVDataProvider, MT5BacktestDataProvider
-
-# TODO: OHLCVProps parece ser una clase de propiedades que ya no se usa
-# from backtest_data_cleaner.properties.data_cleaner_properties import OHLCVProps
 import pandas as pd
 
 class DataCleaner:
@@ -55,22 +52,6 @@ class DataCleaner:
         return df
 
 
-    def validate_data(self, df: pd.DataFrame) -> None:
-        """
-        Valida las filas del DataFrame usando el esquema de Pydantic (OHLCVProps).
-        """
-        df = df.reset_index()  # Convertir el índice 'Time' a columna temporalmente
-        sample_row = df.iloc[0].to_dict()  # Obtener la primera fila como diccionario
-        
-        try:
-            # Validar la fila con Pydantic
-            OHLCVProps(**sample_row)
-            print("✔ Validación de datos completada.")
-        except Exception as e:
-            print(f"Error : {e}")
-            raise ValueError("⚠ ¡Validación fallida!: Revisa los datos.")
-
-
     def clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Limpia el DataFrame completo: valida columnas, convierte el índice y rellena nulos.
@@ -80,7 +61,6 @@ class DataCleaner:
         if not self.validate_columns(df):
             raise ValueError("⚠ ¡Advertencia!: El DataFrame no cumple con el formato esperado.")
         df = self.fill_missing_values(df)
-        self.validate_data(df)
         print("✔ Limpieza completada.")
         return df
 
