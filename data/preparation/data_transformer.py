@@ -2,6 +2,7 @@ from data.loaders.data_provider import CSVDataProvider, MT5BacktestDataProvider
 from data.preparation.data_cleaner import DataCleaner
 from utils.timeframe import Timeframe
 import pandas as pd
+import numpy as np
 import os
 
 class DataTransformer:
@@ -153,76 +154,71 @@ class DataTransformer:
         """
         # Calcular el precio promedio ponderado por volumen (VWAP)
         self.df["VWAP"] = (self.df["Close"] * self.df["Volume"]).cumsum() / self.df["Volume"].cumsum().round(3)
-        return self  
+        return self
 
 
-    def hour(self) -> 'DataTransformer':
+    def add_temporal_features(self) -> 'DataTransformer':
         """
-        Añade la columna 'Hour' al DataFrame con la hora del día (0-23).
+        Añade las 6 columnas temporales al DataFrame:
+        Hour, Minute, Day, Month, Trimester, Year.
         """
         self.df["Hour"] = self.df.index.hour
-        return self
-
-
-    def minute(self) -> 'DataTransformer':
-        """
-        Añade la columna 'Minute' al DataFrame con el minuto de la hora (0-59).
-        """
         self.df["Minute"] = self.df.index.minute
-        return self
-
-
-    def day_of_week(self) -> 'DataTransformer':
-        """
-        Añade la columna 'Day_of_Week' al DataFrame con el día de la semana (0-6).
-        """
         self.df["Day"] = self.df.index.dayofweek
-        return self
-
-
-    def month_of_year(self) -> 'DataTransformer':
-        """
-        Añade la columna 'Month_of_Year' al DataFrame con el mes del año (1-12).
-        """
         self.df["Month"] = self.df.index.month
-        return self
-
-
-    def trimester_of_year(self) -> 'DataTransformer':
-        """
-        Añade la columna 'Trimester_of_Year' al DataFrame con el trimestre del año (1-4).
-        """
         self.df["Trimester"] = self.df.index.quarter
-        return self
-
-
-    def year(self) -> 'DataTransformer':
-        """
-        Añade la columna 'Year' al DataFrame con el año.
-        """
         self.df["Year"] = self.df.index.year
         return self
 
 
-    def asian_session(self) -> 'DataTransformer':
-        """Sesión asiática: de 00:00 a 08:59 del mismo día"""
-        self.df["Asian_session"] = ((self.df.index.hour >= 0) & (self.df.index.hour < 9)).astype(int)
-        return self
+    def add_session_flags(self) -> 'DataTransformer':
+        """
+        Añade columnas de flags para las 3 sesiones de trading:
+        Asian_session, European_session, American_session.
+        """
+        hour = self.df.index.hour
+        minute = self.df.index.minute
 
-    def european_session(self) -> 'DataTransformer':
-        """Sesión europea: de 09:00 a 15:29"""
+        # Sesión asiática: 00:00 a 08:59
+        self.df["Asian_session"] = ((hour >= 0) & (hour < 9)).astype(int)
+
+        # Sesión europea: 09:00 a 15:29
         self.df["European_session"] = (
-            ((self.df.index.hour >= 9) & (self.df.index.hour < 15)) |
-            ((self.df.index.hour == 15) & (self.df.index.minute < 30))
+            ((hour >= 9) & (hour < 15)) |
+            ((hour == 15) & (minute < 30))
         ).astype(int)
+
+        # Sesión americana: 15:30 a 23:59
+        self.df["American_session"] = (
+            ((hour == 15) & (minute >= 30)) |
+            (hour >= 16)
+        ).astype(int)
+
         return self
 
-    def american_session(self) -> 'DataTransformer':
-        """Sesión americana: de 15:30 a 23:59"""
-        self.df["American_session"] = (
-            ((self.df.index.hour == 15) & (self.df.index.minute >= 30)) |
-            (self.df.index.hour >= 16)
-        ).astype(int)
+
+    def add_session_extremes(self) -> 'DataTransformer':
+        """
+        Añade columnas de máximos y mínimos por día para cada sesión:
+        Max/Min_asian_session, Max/Min_european_session, Max/Min_american_session.
+        """
+        sessions = {
+            "asian": "Asian_session",
+            "european": "European_session",
+            "american": "American_session",
+        }
+        date_series = pd.Series(self.df.index.date, index=self.df.index)
+
+        for name, col in sessions.items():
+            session_data = self.df[self.df[col] == 1]
+            grouped = session_data.groupby(session_data.index.date)
+
+            max_per_day = grouped["High"].max()
+            min_per_day = grouped["Low"].min()
+
+            self.df[f"Max_{name}_session"] = date_series.map(max_per_day)
+            self.df[f"Min_{name}_session"] = date_series.map(min_per_day)
+
         return self
 
 
@@ -231,11 +227,11 @@ class DataTransformer:
         Elimina filas del DataFrame donde no hay datos válidos para las sesiones.
         """
         session_cols = [
-            "Max_european_session", 
-            "Min_european_session", 
-            "Max_american_session", 
-            "Min_american_session", 
-            "Max_asian_session", 
+            "Max_european_session",
+            "Min_european_session",
+            "Max_american_session",
+            "Min_american_session",
+            "Max_asian_session",
             "Min_asian_session"
         ]
         # Mantener solo las filas donde no hay valores NaN en las columnas de sesiones
@@ -243,93 +239,48 @@ class DataTransformer:
         return self
 
 
-    def max_asian_session(self) -> 'DataTransformer':
-        asian_data = self.df[self.df["Asian_session"] == 1]
-        max_per_day = asian_data.groupby(asian_data.index.date)["High"].max()
-        self.df["Max_asian_session"] = pd.Series(self.df.index.date, index=self.df.index).map(max_per_day)
+    def add_periodic_high_low(self) -> 'DataTransformer':
+        """
+        Añade columnas de high/low del periodo anterior para daily, weekly y monthly:
+        Daily_high_before, Daily_low_before, Weekly_high_before, Weekly_low_before,
+        Monthly_high_before, Monthly_low_before.
+        """
+        periods = {
+            "Daily": lambda idx: idx.date,
+            "Weekly": lambda idx: idx.to_period("W"),
+            "Monthly": lambda idx: idx.to_period("M"),
+        }
+
+        for label, period_fn in periods.items():
+            period_keys = period_fn(self.df.index)
+            period_series = pd.Series(period_keys, index=self.df.index)
+
+            high_per_period = self.df.groupby(period_keys)["High"].max().shift(1)
+            low_per_period = self.df.groupby(period_keys)["Low"].min().shift(1)
+
+            self.df[f"{label}_high_before"] = period_series.map(high_per_period).bfill()
+            self.df[f"{label}_low_before"] = period_series.map(low_per_period).bfill()
+
         return self
 
-    def min_asian_session(self) -> 'DataTransformer':
-        asian_data = self.df[self.df["Asian_session"] == 1]
-        min_per_day = asian_data.groupby(asian_data.index.date)["Low"].min()
-        self.df["Min_asian_session"] = pd.Series(self.df.index.date, index=self.df.index).map(min_per_day)
-        return self
-
-    def max_european_session(self) -> 'DataTransformer':
-        european_data = self.df[self.df["European_session"] == 1]
-        max_per_day = european_data.groupby(european_data.index.date)["High"].max()
-        self.df["Max_european_session"] = pd.Series(self.df.index.date, index=self.df.index).map(max_per_day)
-        return self
-
-    def min_european_session(self) -> 'DataTransformer':
-        european_data = self.df[self.df["European_session"] == 1]
-        min_per_day = european_data.groupby(european_data.index.date)["Low"].min()
-        self.df["Min_european_session"] = pd.Series(self.df.index.date, index=self.df.index).map(min_per_day)
-        return self
-
-    def max_american_session(self) -> 'DataTransformer':
-        american_data = self.df[self.df["American_session"] == 1]
-        max_per_day = american_data.groupby(american_data.index.date)["High"].max()
-        self.df["Max_american_session"] = pd.Series(self.df.index.date, index=self.df.index).map(max_per_day)
-        return self
-
-    def min_american_session(self) -> 'DataTransformer':
-        american_data = self.df[self.df["American_session"] == 1]
-        min_per_day = american_data.groupby(american_data.index.date)["Low"].min()
-        self.df["Min_american_session"] = pd.Series(self.df.index.date, index=self.df.index).map(min_per_day)
-        return self
-
-
-
-    def add_daily_high(self) -> 'DataTransformer':
-        daily_highs = self.df.groupby(self.df.index.date)["High"].max().shift(1)
-        self.df["Daily_high_before"] = pd.Series(self.df.index.date, index=self.df.index).map(daily_highs).bfill()
-        return self
-
-
-    def add_daily_low(self) -> 'DataTransformer':
-        daily_lows = self.df.groupby(self.df.index.date)["Low"].min().shift(1)
-        self.df["Daily_low_before"] = pd.Series(self.df.index.date, index=self.df.index).map(daily_lows).bfill()
-        return self
-
-
-    def add_weekly_high(self) -> 'DataTransformer':
-        weekly_highs = self.df.groupby(self.df.index.to_period("W"))["High"].max().shift(1)
-        self.df["Weekly_high_before"] = pd.Series(self.df.index.to_period("W"), index=self.df.index).map(weekly_highs).bfill()
-        return self
-
-
-    def add_weekly_low(self) -> 'DataTransformer':
-        weekly_lows = self.df.groupby(self.df.index.to_period("W"))["Low"].min().shift(1)
-        self.df["Weekly_low_before"] = pd.Series(self.df.index.to_period("W"), index=self.df.index).map(weekly_lows).bfill()
-        return self
-
-    def add_monthly_high(self) -> 'DataTransformer':
-        monthly = self.df["High"].groupby(self.df.index.to_period("M")).max()
-        shifted = monthly.shift(1)
-        mapping = pd.Series(self.df.index.to_period("M"), index=self.df.index).map(shifted)
-        self.df["Monthly_high_before"] = mapping.bfill()
-        return self
-
-    def add_monthly_low(self) -> 'DataTransformer':
-        monthly = self.df["Low"].groupby(self.df.index.to_period("M")).min()
-        shifted = monthly.shift(1)
-        mapping = pd.Series(self.df.index.to_period("M"), index=self.df.index).map(shifted)
-        self.df["Monthly_low_before"] = mapping.bfill()
-        return self
 
     def convert_to_heiken_ashi(self) -> 'DataTransformer':
         """
         Convierte las velas OHLC del DataFrame a formato Heiken Ashi,
         reemplazando las columnas originales: 'Open', 'High', 'Low', 'Close'.
+        Usa vectorización con numpy para evitar loops de Python.
         """
         ha_close = (self.df["Open"] + self.df["High"] + self.df["Low"] + self.df["Close"]) / 4
-        ha_open = [self.df["Open"].iloc[0]]  # Primer valor inicial
 
-        for i in range(1, len(self.df)):
-            ha_open.append((ha_open[i - 1] + ha_close.iloc[i - 1]) / 2)
+        # Vectorized HA open using numpy iteration (inherently sequential)
+        n = len(self.df)
+        ha_open = np.empty(n)
+        ha_open[0] = self.df["Open"].iloc[0]
+        close_vals = ha_close.values
+        for i in range(1, n):
+            ha_open[i] = (ha_open[i - 1] + close_vals[i - 1]) / 2
 
-        self.df["Open"] = pd.Series(ha_open, index=self.df.index)
+        self.df["Open"] = ha_open
         self.df["Close"] = ha_close
         self.df["High"] = self.df[["High", "Open", "Close"]].max(axis=1)
         self.df["Low"] = self.df[["Low", "Open", "Close"]].min(axis=1)
@@ -436,7 +387,7 @@ class DataTransformer:
             try:
                 # Condiciones del patrón
                 vela1_bajista = vela1['Close'] < vela1['Open']  # Primera vela bajista
-                pullback_valido = (vela2['Low'] > vela1['Low'] and 
+                pullback_valido = (vela2['Low'] > vela1['Low'] and
                                     vela2['High'] <= vela1['High'])  # Pullback dentro de la primera vela
                 ruptura = vela3['Low'] < vela1['Low']  # Tercera vela rompe el mínimo de la primera
 
@@ -498,8 +449,8 @@ class DataTransformer:
         return self
 
 
-    def prepare_data(self, timeframes: list, ema_periods: list, volatility_periods: list, 
-                        pct_change_periods: list, volume_periods: list, cumulative_volume_periods: list, 
+    def prepare_data(self, timeframes: list, ema_periods: list, volatility_periods: list,
+                        pct_change_periods: list, volume_periods: list, cumulative_volume_periods: list,
                         obp_range: int) -> dict:
             """
             Prepara los datos resampleando, calculando indicadores y limpiando los datos.
@@ -529,40 +480,23 @@ class DataTransformer:
                 transformer_resampled = DataTransformer(resampled_df)
                 enriched_df = (
                     transformer_resampled
-                    .convert_to_heiken_ashi()                                       # Convertir a Heiken Ashi
-                    .calculate_ema(ema_periods)                                     # Calcular EMAs
-                    .calculate_volatility_pct_change(volatility_periods)            # Calcular volatilidad
-                    .calculate_pct_change(pct_change_periods)                       # Calcular cambios porcentuales
-                    .volume_pct_change(volume_periods)                              # Calcular cambios porcentuales en volumen
-                    .calculate_cumulative_volume_pct(cumulative_volume_periods)     # Calcular volumen acumulado
-                    .day_of_week()                                                  # Día de la semana
-                    .hour()                                                         # Hora
-                    .minute()                                                       # Minuto
-                    .month_of_year()                                                # Mes del año
-                    .trimester_of_year()                                            # Trimestre del año
-                    .year()                                                         # Año
-                    .calculate_vwap()                                               # Calcular VWAP
-                    .european_session()                                             # Marcar sesión europea
-                    .american_session()                                             # Marcar sesión americana
-                    .asian_session()                                                # Marcar sesión asiática
-                    .max_european_session()                                         # Máximo sesión europea
-                    .min_european_session()                                         # Mínimo sesión europea
-                    .max_american_session()                                         # Máximo sesión americana
-                    .min_american_session()                                         # Mínimo sesión americana
-                    .max_asian_session()                                            # Máximo sesión asiática
-                    .min_asian_session()                                            # Mínimo sesión asiática
-                    .add_daily_high()                                               # Máximo diario
-                    .add_daily_low()                                                # Mínimo diario
-                    .add_weekly_high()                                              # Máximo semanal
-                    .add_weekly_low()                                               # Mínimo semanal
-                    .add_monthly_high()                                             # Máximo mensual
-                    .add_monthly_low()                                              # Mínimo mensual
-                    .clean_sessions()                                               # Limpiar filas sin datos de sesiones
-                    .detectar_onebar_pullback_alcista()                             # Detectar pullback alcista
-                    .detectar_onebar_pullback_bajista()                             #Detectar pullback bajista
-                    .detectar_onebar_pullback_alcista_extendido(obp_range)          # Detectar pullback alcista extendido
-                    .detectar_onebar_pullback_bajista_extendido(obp_range)          # Detectar pullback bajista extendido
-                    .transform()                                                    # Transformar y devolver el DataFrame procesado
+                    .convert_to_heiken_ashi()
+                    .calculate_ema(ema_periods)
+                    .calculate_volatility_pct_change(volatility_periods)
+                    .calculate_pct_change(pct_change_periods)
+                    .volume_pct_change(volume_periods)
+                    .calculate_cumulative_volume_pct(cumulative_volume_periods)
+                    .add_temporal_features()
+                    .calculate_vwap()
+                    .add_session_flags()
+                    .add_session_extremes()
+                    .add_periodic_high_low()
+                    .clean_sessions()
+                    .detectar_onebar_pullback_alcista()
+                    .detectar_onebar_pullback_bajista()
+                    .detectar_onebar_pullback_alcista_extendido(obp_range)
+                    .detectar_onebar_pullback_bajista_extendido(obp_range)
+                    .transform()
                 )
                 print(f"✔ Datos procesados para el timeframe: {timeframe}.\n")
 
