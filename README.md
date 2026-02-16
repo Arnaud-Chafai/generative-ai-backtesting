@@ -1,251 +1,136 @@
-# Generative AI Backtesting Framework
+# Backtesting Framework
 
-Framework de backtesting para estrategias de trading algorítmico con soporte para múltiples mercados (Crypto, Futures, Stocks) y futura integración de agentes de IA generativa para operaciones mediante lenguaje natural.
+Framework de backtesting para estrategias de trading algoritmico en crypto. Motor de ejecucion con soporte para multiples entradas (DCA), 30+ metricas, 10 dashboards de analisis y optimizacion de parametros.
 
-## 🎯 Visión del Proyecto
-
-Este proyecto está diseñado en dos fases:
-
-**Fase 1 (Actual):** Framework robusto de backtesting con métricas avanzadas, visualizaciones y soporte multi-mercado.
-
-**Fase 2 (Futura):** Integración de agentes de IA generativa que permitan realizar operaciones de compra/venta mediante lenguaje natural, automatizando la toma de decisiones basándose en análisis de datos históricos y patrones de mercado.
-
-## ✨ Características
-
-### Funcionalidades Actuales (Fase 1-3 Completas)
-
-- ✅ **Motor de Backtest Robusto:** 280 líneas limpias, optimizado y funcional
-- ✅ **Soporte Multi-Mercado:** Crypto (con extensión futura a Futures y Stocks)
-- ✅ **Sistema de Tipos:** Validación con Pydantic, enums robustos
-- ✅ **30+ Métricas Avanzadas:**
-  - Por Trade: MAE, MFE, Profit Efficiency, Risk/Reward
-  - Portfolio: Sharpe, Sortino, Profit Factor, Max Drawdown
-  - Operacionales: Fees, Slippage, Win Rate, etc.
-- ✅ **Visualización Completa:**
-  - Gráficos de velas con entrada/salida marcadas
-  - 10 dashboards interactivos (performance, scatter plots, heatmaps)
-  - Análisis temporal por día/mes
-  - Distribuciones y boxplots de métricas
-- ✅ **Preparación de Datos:** Limpieza y transformación automática
-- ✅ **Notebook Interactivo:** Ejemplo completo con flujo end-to-end
-
-### Roadmap Fase 2 (IA Generativa)
-
-- 🔮 Agentes conversacionales para análisis de mercado
-- 🔮 Sistema de decisión autónomo basado en LLMs
-- 🔮 Generación de estrategias mediante lenguaje natural
-- 🔮 Optimización automática de parámetros con IA
-- 🔮 Análisis predictivo con modelos generativos
-
-## Instalación
-
-### Requisitos previos
-
-- Python 3.10 o superior
-- uv (gestor de paquetes)
-
-### Instalación con uv
-
-```bash
-# Crear entorno virtual
-uv venv
-
-# Activar entorno virtual
-source .venv/Scripts/activate  # Windows
-source .venv/bin/activate       # Linux/Mac
-
-# Instalar dependencias
-uv pip install -e .
-
-# Para desarrollo (incluye pytest, black, ruff)
-uv pip install -e ".[dev]"
-```
-
-## 📁 Estructura del Proyecto
-
-```
-backtesting/
-├── 📦 models/              # Modelos de datos con Pydantic
-│   ├── markets/            # Definiciones de mercados (Crypto, Futures)
-│   ├── trades/             # Modelos de trades por tipo de mercado
-│   ├── signals.py          # Señales de trading
-│   └── enums.py            # Enumeraciones del sistema
-├── ⚙️ config/              # Configuraciones por mercado
-│   └── market_configs/     # Configs específicas (fees, leverage, etc.)
-├── 🎯 strategies/          # Estrategias de trading
-│   └── base_strategy.py    # Clase base para estrategias personalizadas
-├── 📊 data/                # Gestión de datos
-│   ├── loaders/            # Carga de datos desde fuentes
-│   └── preparation/        # Limpieza y transformación
-├── 🚀 core/                # Motor de backtest
-│   ├── backtest_engine.py  # Engine principal
-│   ├── executor.py         # Ejecución de trades
-│   └── position_manager.py # Gestión de posiciones
-├── 📈 metrics/             # Métricas de rendimiento
-│   ├── portfolio_metrics.py # Métricas de portafolio
-│   └── trade_metrics.py    # Métricas por trade
-├── 📉 visualization/       # Visualización y dashboards
-│   ├── dashboards/         # Dashboards especializados
-│   ├── chart_plotter.py    # Gráficos de trades
-│   └── dashboard_manager.py # Gestión de dashboards
-├── 🛠️ utils/              # Utilidades generales
-├── 📓 notebooks/           # Análisis exploratorios
-├── 🧪 tests/               # Suite de tests
-└── 📚 docs/                # Documentación técnica
-```
-
-## 🚀 Uso Rápido
-
-### Flujo Completo en 10 Líneas
+## Uso rapido
 
 ```python
 from strategies.examples.breakout_simple import BreakoutSimple
 from core.backtest_runner import BacktestRunner
-from utils.timeframe import Timeframe
 
-# 1. Configurar estrategia
-strategy = BreakoutSimple(
-    symbol="BTC",
-    timeframe=Timeframe.M5,
-    exchange="Binance",
-    lookback_period=20,
-    position_size_pct=0.25,
-    initial_capital=1000.0
-)
-
-# 2. Ejecutar backtest completo
+# Crear estrategia y ejecutar
+strategy = BreakoutSimple(symbol="BTC", exchange="Binance", lookback_period=20)
 runner = BacktestRunner(strategy)
 runner.run()
 
-# 3. Ver resumen de métricas
+# Resultados
 runner.print_summary()
-
-# 4. Visualizar trades en gráficos
-runner.plot_trades(interval_hours=24, number_visualisation=5)
-
-# 5. Generar dashboards de análisis
-runner.plot_dashboards(
-    modules=['performance', 'metrics_boxplot', 'mae_scatter', 'mfe_scatter'],
-    show=True
-)
-
-# 6. Acceder a datos brutos
-df_trades = runner.metrics.trade_metrics_df
-all_metrics = runner.metrics.all_metrics
+runner.plot_trades()        # chart interactivo de velas
+runner.plot_dashboards()    # 10 dashboards de analisis
 ```
 
-### Crear tu Propia Estrategia
+## Descargar datos
+
+```python
+from data.loaders.data_provider import CcxtDataProvider
+
+provider = CcxtDataProvider(symbol="BTC/USDT", timeframe="5m", start_date="2024-01-01")
+provider.save_to_csv()  # guarda en data/raw_data/BTCUSDT_5m.csv
+```
+
+## Optimizar parametros
+
+```python
+from optimization import ParameterOptimizer
+
+optimizer = ParameterOptimizer(
+    strategy_class=BreakoutSimple, market_data=df,
+    symbol='BTC', exchange='Binance'
+)
+results = optimizer.optimize(
+    param_ranges={'lookback_period': [10, 20, 30, 50], 'position_size_pct': [0.3, 0.5, 0.7]},
+    metric='sharpe_ratio'
+)
+best = optimizer.get_best_params(min_trades=20)
+```
+
+## Crear una estrategia
 
 ```python
 from strategies.base_strategy import BaseStrategy
-from models.simple_signals import TradingSignal
-from models.enums import SignalType
+from models.enums import SignalType, MarketType
 from utils.timeframe import Timeframe
 
-class MyStrategy(BaseStrategy):
+class MiEstrategia(BaseStrategy):
+    def __init__(self, mi_param: int = 20, **kwargs):
+        super().__init__(
+            market=MarketType.CRYPTO, symbol=kwargs.get('symbol', 'BTC'),
+            strategy_name="Mi_Estrategia", timeframe=kwargs.get('timeframe', Timeframe.H1),
+            exchange=kwargs.get('exchange', 'Binance'), **kwargs
+        )
+        self.mi_param = mi_param
+
     def generate_simple_signals(self):
-        """Genera señales de trading"""
         signals = []
         df = self.market_data
-
-        # Implementa tu lógica aquí
-        df['SMA_20'] = df['close'].rolling(20).mean()
-
-        for i in range(20, len(df)):
-            if df['close'].iloc[i] > df['SMA_20'].iloc[i]:
-                signals.append(TradingSignal(
-                    timestamp=df.index[i],
-                    signal_type=SignalType.BUY,
-                    price=df['close'].iloc[i]
+        for i in range(self.mi_param, len(df)):
+            if condicion_compra:
+                signals.append(self.create_simple_signal(
+                    SignalType.BUY, df.index[i], df['Close'].iloc[i], 0.5
                 ))
-
+            elif condicion_venta:
+                signals.append(self.create_simple_signal(
+                    SignalType.SELL, df.index[i], df['Close'].iloc[i], 1.0
+                ))
         return signals
-
-# Usar tu estrategia
-strategy = MyStrategy(
-    symbol="BTC",
-    timeframe=Timeframe.H1,
-    exchange="Binance",
-    initial_capital=5000
-)
-runner = BacktestRunner(strategy)
-runner.run()
 ```
 
-## 📚 Documentación
+## Estructura del proyecto
 
-- **[Roadmap Técnico](CLAUDE.md)** - Planeación y visión del proyecto
-- **[Resumen Fase 3](docs/FASE3_RESUMEN.md)** - Visualización y dashboards (ACTUAL)
-- **[Diccionario de Datos](docs/data_dictionary.md)** - Estructura de datos
-- **[API Reference](#)** - Documentación de APIs (próximamente)
+```
+backtesting/
+├── core/                    Motor de backtest + orquestador
+├── models/                  Enums (SignalType) y TradingSignal
+├── config/
+│   ├── market_configs/      Fees, slippage, tick_size por exchange
+│   └── markets/             Clases de definicion de mercados
+├── data/
+│   ├── loaders/             CSV, MT5, ccxt (Binance)
+│   └── preparation/         DataCleaner + DataTransformer
+├── metrics/                 30+ metricas (trade + portfolio)
+├── strategies/              BaseStrategy + ejemplos
+├── optimization/            Grid Search + visualizacion 3D
+├── visualization/           Charts de velas + 10 dashboards
+├── utils/                   Timeframe enum
+├── tests/                   pytest
+└── notebooks/               Ejemplos interactivos
+```
 
-## 🏗️ Estado del Proyecto
+Cada modulo tiene un `CLAUDE.md` con documentacion detallada. Ver [CLAUDE.md](CLAUDE.md) para el indice completo.
 
-**Versión Actual**: `0.3.0` (Fase 4a Completada)
+## Metricas disponibles
 
-### Fase 1: Framework de Backtesting ✅ COMPLETADO
-- ✅ Arquitectura modular con Pydantic
-- ✅ Motor de backtest (280 líneas optimizadas)
-- ✅ Sistema de métricas completo (30+ métricas)
-- ✅ Soporte Crypto (extensible a Futures/Stocks)
-- ✅ Gestión de posiciones y trades
+**Por trade:** MAE, MFE, duration_bars, bars_in_profit/loss, profit_efficiency, risk_reward_ratio, trade_volatility, trade_drawdown
 
-### Fase 2: Sistema de Visualización ✅ COMPLETADO
-- ✅ Visualización de trades con candles
-- ✅ 10 dashboards interactivos
-- ✅ Scatter plots y análisis temporal
-- ✅ Distribuciones y boxplots
-- ✅ Notebook ejemplo funcional
+**Portfolio:** Sharpe ratio, Sortino ratio, Profit Factor, Max Drawdown, Recovery Factor, Expectancy, ROI, Win Rate
 
-### Fase 3: Optimización de Parámetros ✅ PARCIALMENTE (v1.0)
+**Operacionales:** Total fees, slippage cost, avg fee per trade, costs as % of profit
 
-#### Completado:
-- ✅ Grid Search automático
-- ✅ Inyección de datos (200x más rápido)
-- ✅ Validación inteligente de parámetros
-- ✅ Filtro anti-fantasma (min_trades)
-- ✅ Barra de progreso con tqdm
-- ✅ Export a CSV
-- ✅ 7 tests comprensivos
-- ✅ Documentación OPTIMIZER_GUIDE.md
+## Dashboards
 
-#### Próximo (v1.5):
-- ⏳ Random Search (espacios grandes)
-- ⏳ Bayesian Optimization (más inteligente)
-- ⏳ Walk-Forward Testing (v2.0)
-- ⏳ Multiprocessing (paralelizar)
+10 dashboards disponibles via `runner.plot_dashboards()`:
 
-### Fase 4: Comparación de Estrategias (SIGUIENTE)
-- ⏳ Comparador de estrategias
-- ⏳ Análisis de sensibilidad
-- ⏳ Backtesting robusto multi-período
+`performance`, `time_chart`, `temporal`, `metrics_distribution`, `metrics_boxplot`, `mae_scatter`, `mfe_scatter`, `risk_reward_scatter`, `volatility_scatter`, `profit_efficiency_scatter`
 
-### Fase 5: Integración IA Generativa (FUTURO)
-- 🔮 Agentes conversacionales para análisis
-- 🔮 Generación de estrategias con LLMs
-- 🔮 Optimización con IA
-- 🔮 Sistema de toma de decisiones autónomo
+## Instalacion
 
-## 🤝 Contribuciones
+```bash
+python -m venv .venv
+source .venv/Scripts/activate   # Windows
+pip install -r requirements.txt
+pip install ccxt                # opcional, para descargar datos de Binance
+```
 
-Las contribuciones son bienvenidas! Este proyecto está en desarrollo activo y cualquier ayuda es apreciada.
+## Estado
 
-### Áreas de Interés
-- Optimización del motor de backtest
-- Nuevas estrategias de ejemplo
-- Mejoras en visualizaciones
-- Tests y documentación
-- Ideas para integración con IA generativa
-
-## 📝 Licencia
-
-MIT License - Ver archivo LICENSE para más detalles.
-
-## 🔗 Enlaces
-
-- **Repositorio:** [github.com/Arnaud-Chafai/generative-ai-backtesting](https://github.com/Arnaud-Chafai/generative-ai-backtesting)
-- **Issues:** [Reportar problemas o sugerencias](https://github.com/Arnaud-Chafai/generative-ai-backtesting/issues)
+| Fase | Descripcion | Estado |
+|------|-------------|--------|
+| 1-2 | Motor de backtest + metricas | Completado |
+| 3 | Visualizacion (charts + 10 dashboards) | Completado |
+| 4a | Optimizador Grid Search + viz 3D | Completado |
+| 4b | Random Search + Bayesian | Pendiente |
+| 5 | Mas estrategias | Pendiente |
 
 ---
 
-**Nota:** Este es un proyecto educativo y de investigación. No constituye asesoramiento financiero. Úsalo bajo tu propia responsabilidad.
+Proyecto educativo y de investigacion. No constituye asesoramiento financiero.
