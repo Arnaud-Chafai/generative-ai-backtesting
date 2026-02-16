@@ -7,7 +7,7 @@ las características de un mercado de criptomonedas.
 
 from typing import Any, Dict
 from pydantic import Field
-from models.markets.base_market import BaseMarketDefinition
+from config.markets.base_market import BaseMarketDefinition
 from config.market_configs.crypto_config import get_crypto_config
 from models.enums import MarketType
 

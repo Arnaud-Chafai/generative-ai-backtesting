@@ -8,7 +8,7 @@ import pandas as pd
 # Imports de la nueva estructura
 from models.enums import SignalType, OrderType, CurrencyType, ExchangeName, MarketType, SignalPositionSide
 from models.simple_signals import TradingSignal
-from models.markets.crypto_market import CryptoMarketDefinition
+from config.markets.crypto_market import CryptoMarketDefinition
 from utils.timeframe import Timeframe
 
 class BaseStrategy(ABC):
