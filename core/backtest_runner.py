@@ -114,39 +114,62 @@ class BacktestRunner:
 
 
 
-    def get_visualizer(self):
+    def get_visualizer(self, interactive: bool = True):
         """
         Obtiene el visualizador para uso avanzado.
-        
+
+        Args:
+            interactive: True para chart interactivo (TradingView), False para estático (mplfinance)
+
         Returns:
-            BacktestVisualizer configurado con los resultados
+            Visualizador configurado con los resultados
         """
         if self.metrics is None:
             raise ValueError("⚠️ Primero ejecuta run()")
-        
-        from visualization.chart_plotter import BacktestVisualizer
-        return BacktestVisualizer(
-            strategy=self.strategy,
-            trade_metrics_df=self.metrics.trade_metrics_df
-        )
+
+        if interactive:
+            from visualization.chart_plotter import BacktestVisualizerInteractive
+            return BacktestVisualizerInteractive(
+                strategy=self.strategy,
+                trade_metrics_df=self.metrics.trade_metrics_df
+            )
+        else:
+            from visualization.chart_plotter import BacktestVisualizerStatic
+            return BacktestVisualizerStatic(
+                strategy=self.strategy,
+                trade_metrics_df=self.metrics.trade_metrics_df
+            )
 
     def plot_trades(
         self,
+        interactive: bool = True,
         interval_hours: int = 5,
-        number_visualisation: int = None
+        number_visualisation: int = None,
+        start: str = None,
+        end: str = None,
+        last_days: int = None,
+        indicators: list = None,
     ):
         """
         Genera gráficos de los trades.
 
         Args:
-            interval_hours: Horas por gráfico (default: 5)
-            number_visualisation: Límite de gráficos (None = todos)
+            interactive: True (default) abre chart interactivo estilo TradingView.
+                         False genera gráficos estáticos con mplfinance.
+            interval_hours: Horas por gráfico (solo modo estático)
+            number_visualisation: Límite de gráficos (solo modo estático, None = todos)
+            start: Fecha inicio 'YYYY-MM-DD' (solo interactivo)
+            end: Fecha fin 'YYYY-MM-DD' (solo interactivo)
+            last_days: Mostrar últimos N días (solo interactivo)
         """
-        viz = self.get_visualizer()
-        viz.plot_trades(
-            interval_hours=interval_hours,
-            number_visualisation=number_visualisation
-        )
+        viz = self.get_visualizer(interactive=interactive)
+        if interactive:
+            viz.show(start=start, end=end, last_days=last_days, indicators=indicators)
+        else:
+            viz.plot_trades(
+                interval_hours=interval_hours,
+                number_visualisation=number_visualisation
+            )
 
     def plot_dashboards(
         self,
