@@ -148,5 +148,7 @@ nul
 # Notebooks with outputs (optional - remove if you want to keep outputs)
 notebooks/*.ipynb
 
-# Claude Code
-.claude/
+# Claude Code (ignorar contenido pero trackear skills)
+.claude/*
+!.claude/skills/
+!.claude/skills/**
