@@ -1,4 +1,9 @@
 # visualization/chart_plotter.py
+import json
+import os
+import tempfile
+import webbrowser
+
 import numpy as np
 import pandas as pd
 import mplfinance as mpf
@@ -132,16 +137,17 @@ class BacktestVisualizerStatic:
 
 class BacktestVisualizerInteractive:
     """
-    Visualizador interactivo estilo TradingView usando lightweight-charts.
+    Visualizador interactivo estilo TradingView.
 
-    Abre una ventana standalone con zoom, pan, crosshair y marcadores de trades.
+    Genera un archivo HTML autocontenido con TradingView Lightweight Charts JS v4.2.3
+    (CDN) y lo abre en el navegador. Zero dependencias Python adicionales.
 
     Uso:
         viz = BacktestVisualizerInteractive(strategy, trade_metrics_df)
-        viz.show()
+        viz.show(last_days=30, indicators=['EMA_20'])
     """
 
-    MAX_TRADE_LINES = 200  # Límite de líneas entry→exit para no sobrecargar el chart
+    INDICATOR_COLORS = ['#FF6D00', '#2962FF', '#AB47BC', '#FFD600', '#00E676']
 
     def __init__(self, strategy, trade_metrics_df: pd.DataFrame):
         self.strategy = strategy
@@ -159,41 +165,33 @@ class BacktestVisualizerInteractive:
         indicators: Optional[list] = None,
     ):
         """
-        Abre el chart interactivo en una ventana standalone.
+        Genera HTML con chart interactivo y lo abre en el navegador.
 
         Args:
-            width, height: Tamaño de la ventana
-            block: Si True, bloquea hasta cerrar la ventana
+            width, height: Tamaño inicial del chart en píxeles
+            block: Ignorado (mantenido por compatibilidad de API)
             start: Fecha inicio 'YYYY-MM-DD' (filtra velas y trades)
             end: Fecha fin 'YYYY-MM-DD'
             last_days: Mostrar solo los últimos N días (alternativa a start/end)
             indicators: Lista de indicadores a mostrar (ej: ['EMA_20']). None = ninguno.
         """
-        from lightweight_charts import Chart
-
-        # Permitir asyncio.run() dentro de Jupyter (que ya tiene event loop)
-        try:
-            import nest_asyncio
-            nest_asyncio.apply()
-        except ImportError:
-            pass
-
-        # Filtrar rango de fechas
         self._apply_date_filter(start, end, last_days)
 
-        chart = Chart(width=width, height=height)
+        html = self._build_html(width, height, indicators)
 
-        self._configure_chart_style(chart)
-        self._add_volume(chart)
-        self._add_candlesticks(chart)
-        self._add_indicators(chart, indicators=indicators)
-        self._add_trade_markers(chart)
+        tmp_dir = os.path.join(tempfile.gettempdir(), 'backtesting_charts')
+        os.makedirs(tmp_dir, exist_ok=True)
+        filepath = os.path.join(tmp_dir, f'{self.strategy.symbol}_chart.html')
 
-        print(f"📊 Abriendo chart interactivo: {self.strategy.symbol}")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(html)
+
+        print(f"📊 Chart interactivo: {self.strategy.symbol}")
         print(f"  - {len(self._filtered_market)} velas")
         print(f"  - {len(self._filtered_trades)} trades")
+        print(f"  - Archivo: {filepath}")
 
-        chart.show(block=block)
+        webbrowser.open(filepath)
 
     def _apply_date_filter(self, start, end, last_days):
         """Filtra market data y trades al rango especificado."""
@@ -221,10 +219,9 @@ class BacktestVisualizerInteractive:
         self._filtered_trades = trades.loc[mask]
 
     def _prepare_ohlcv_data(self) -> pd.DataFrame:
-        """Prepara datos OHLCV con formato requerido por lightweight-charts."""
+        """Prepara datos OHLCV con columnas normalizadas y 'time' como columna."""
         df = self._filtered_market.copy()
 
-        # lightweight-charts espera columnas en minúsculas y 'time' como columna
         rename_map = {}
         for col in df.columns:
             col_lower = col.lower()
@@ -235,89 +232,47 @@ class BacktestVisualizerInteractive:
 
         # El index (datetime) se convierte en columna 'time'
         df = df.reset_index()
-        index_col = df.columns[0]  # primera columna tras reset
+        index_col = df.columns[0]
         df = df.rename(columns={index_col: 'time'})
 
         return df[['time', 'open', 'high', 'low', 'close', 'volume']]
 
-    def _configure_chart_style(self, chart):
-        """Aplica tema oscuro estilo TradingView."""
-        chart.layout(
-            background_color='#B0B0B0',
-            text_color='#333333',
-            font_size=12,
-            font_family='Trebuchet MS'
-        )
-        chart.grid(vert_enabled=False, horz_enabled=False)
-        chart.crosshair(mode='normal')
-        chart.watermark(self.strategy.symbol, color='rgba(180, 180, 200, 0.15)')
-        chart.legend(visible=True, ohlc=True, percent=True, lines=True, color='#333333')
-
-    def _add_candlesticks(self, chart):
-        """Agrega velas con estilo TradingView."""
+    def _serialize_candle_data(self) -> str:
+        """DataFrame → JSON [{time, open, high, low, close}]"""
         df = self._prepare_ohlcv_data()
-        chart.set(df)
-        chart.candle_style(
-            up_color='#FFFFFF',
-            down_color='#000000',
-            border_up_color='#000000',
-            border_down_color='#000000',
-            wick_up_color='#000000',
-            wick_down_color='#000000'
-        )
+        times = df['time'].astype(np.int64) // 10**9
+        records = [
+            {'time': int(t), 'open': float(o), 'high': float(h),
+             'low': float(l), 'close': float(c)}
+            for t, o, h, l, c in zip(
+                times, df['open'], df['high'], df['low'], df['close']
+            )
+        ]
+        return json.dumps(records)
 
-    def _add_volume(self, chart):
-        """Agrega barras de volumen en panel inferior."""
-        chart.volume_config(
-            up_color='rgba(38, 166, 154, 0.3)',
-            down_color='rgba(239, 83, 80, 0.3)'
-        )
-
-    def _add_indicators(self, chart, indicators: Optional[list] = None):
-        """
-        Agrega indicadores al chart.
-
-        Args:
-            indicators: Lista de nombres de columnas a mostrar (ej: ['EMA_20', 'VWAP']).
-                        Si es None, no agrega ninguno (para evitar saturar el chart).
-        """
-        if not indicators:
-            return
-
+    def _serialize_volume_data(self) -> str:
+        """DataFrame → JSON [{time, value, color}]"""
         df = self._prepare_ohlcv_data()
-        market_df = self._filtered_market
+        times = df['time'].astype(np.int64) // 10**9
+        records = [
+            {
+                'time': int(t),
+                'value': float(v),
+                'color': 'rgba(38,166,154,0.4)' if c >= o else 'rgba(239,83,80,0.4)',
+            }
+            for t, v, o, c in zip(
+                times, df['volume'], df['open'], df['close']
+            )
+        ]
+        return json.dumps(records)
 
-        colors = ['#FF6D00', '#2962FF', '#AB47BC', '#FFD600', '#00E676']
-        color_idx = 0
-
-        for col in indicators:
-            if col not in market_df.columns:
-                print(f"  ⚠️ Columna '{col}' no encontrada, omitiendo")
-                continue
-
-            line = chart.create_line(name=col, color=colors[color_idx % len(colors)], width=2)
-
-            indicator_df = pd.DataFrame({
-                'time': df['time'],
-                col: market_df[col].values
-            }).dropna()
-
-            line.set(indicator_df)
-            color_idx += 1
-
-    def _add_trade_markers(self, chart):
-        """Marca entradas/salidas con trend_line + markers JS con size grande."""
-        import json
-
-        MAX_TRADES = 200
+    def _serialize_markers(self) -> str:
+        """Trades → JSON [{time, position, shape, color, text, size}] ORDENADOS por time."""
         trades = self._filtered_trades
-        if len(trades) > MAX_TRADES:
-            print(f"  ⚠️ {len(trades)} trades > {MAX_TRADES}, omitiendo marcadores")
-            return
+        if trades.empty:
+            return '[]'
 
-        # Construir markers JS con size (la API Python no soporta size)
-        js_markers = []
-
+        markers = []
         for _, trade in trades.iterrows():
             entry_time = pd.to_datetime(trade['entry_timestamp'])
             exit_time = pd.to_datetime(trade['exit_timestamp'])
@@ -326,77 +281,279 @@ class BacktestVisualizerInteractive:
             net_pnl = trade.get('net_profit_loss', 0)
             pnl_pct = trade.get('pnl_pct', 0)
             pnl_sign = '+' if net_pnl >= 0 else ''
-            trade_color = '#00FF00' if net_pnl >= 0 else '#CC0000'
 
-            # Trend line entry→exit
-            chart.trend_line(
-                start_time=entry_time,
-                start_value=entry_price,
-                end_time=exit_time,
-                end_value=exit_price,
-                line_color=trade_color,
-                width=2,
-                style='dashed'
-            )
-
-            # Entry marker (unix timestamp int)
-            entry_unix = int(entry_time.timestamp())
-            exit_unix = int(exit_time.timestamp())
-
-            js_markers.append({
-                'time': entry_unix,
+            markers.append({
+                'time': int(entry_time.value // 10**9),
                 'position': 'belowBar',
                 'shape': 'arrowUp',
-                'color': '#00FF00',
+                'color': '#00E676',
                 'text': f'BUY {entry_price:.0f}',
-                'size': 2
+                'size': 2,
             })
-            js_markers.append({
-                'time': exit_unix,
+            markers.append({
+                'time': int(exit_time.value // 10**9),
                 'position': 'aboveBar',
                 'shape': 'arrowDown',
-                'color': '#CC0000',
+                'color': '#FF1744',
                 'text': f'SELL {exit_price:.0f} | {pnl_sign}{pnl_pct:.1f}%',
-                'size': 2
+                'size': 2,
             })
 
-        # Ordenar por tiempo e inyectar directo al JS
-        js_markers.sort(key=lambda m: m['time'])
-        if js_markers:
-            chart.run_script(
-                f'{chart.id}.series.setMarkers({json.dumps(js_markers)})'
-            )
+        # CRITICAL: markers MUST be sorted by time or they become invisible
+        markers.sort(key=lambda m: m['time'])
+        return json.dumps(markers)
 
-    def _add_trade_lines(self, chart):
-        """Agrega líneas entry→exit coloreadas por profitabilidad."""
+    def _serialize_indicator_data(self, indicators) -> list:
+        """Columnas de indicadores → lista de (nombre, color, json_data)."""
+        if not indicators:
+            return []
+
+        df = self._prepare_ohlcv_data()
+        market_df = self._filtered_market
+        times = df['time'].astype(np.int64) // 10**9
+        result = []
+
+        for i, col in enumerate(indicators):
+            if col not in market_df.columns:
+                print(f"  ⚠️ Columna '{col}' no encontrada, omitiendo")
+                continue
+
+            color = self.INDICATOR_COLORS[i % len(self.INDICATOR_COLORS)]
+            values = market_df[col].values
+            records = [
+                {'time': int(t), 'value': float(v)}
+                for t, v in zip(times, values)
+                if pd.notna(v)
+            ]
+            result.append((col, color, json.dumps(records)))
+
+        return result
+
+    def _serialize_trades_for_panel(self) -> str:
+        """Trades → JSON para el panel de navegación."""
         trades = self._filtered_trades
-        if len(trades) > self.MAX_TRADE_LINES:
-            print(f"  ⚠️ {len(trades)} trades > límite ({self.MAX_TRADE_LINES}), omitiendo líneas entry→exit")
-            return
-
+        if trades.empty:
+            return '[]'
+        result = []
         for _, trade in trades.iterrows():
             entry_time = pd.to_datetime(trade['entry_timestamp'])
             exit_time = pd.to_datetime(trade['exit_timestamp'])
-            entry_price = trade['entry_price']
-            exit_price = trade['exit_price']
-            net_pnl = trade.get('net_pnl', 0)
+            result.append({
+                'et': int(entry_time.value // 10**9),
+                'xt': int(exit_time.value // 10**9),
+                'ep': float(trade['entry_price']),
+                'xp': float(trade['exit_price']),
+                'pnl': float(trade.get('pnl_pct', 0)),
+            })
+        return json.dumps(result)
 
-            color = '#26A69A' if net_pnl >= 0 else '#EF5350'
+    def _build_html(self, width, height, indicators) -> str:
+        """Genera HTML con chart + panel lateral de trades."""
+        candle_json = self._serialize_candle_data()
+        volume_json = self._serialize_volume_data()
+        markers_json = self._serialize_markers()
+        trades_json = self._serialize_trades_for_panel()
+        indicator_lines = self._serialize_indicator_data(indicators)
 
-            line = chart.create_line(
-                name=f'trade_{_}',
-                color=color,
-                width=1,
-                style='dotted',
-                price_line=False,
-                price_label=False
+        total_bars = len(self._filtered_market)
+        symbol = self.strategy.symbol
+        trades_df = self._filtered_trades
+        n_trades = len(trades_df)
+
+        # Stats para el panel
+        if n_trades > 0 and 'pnl_pct' in trades_df.columns:
+            wins = int((trades_df['pnl_pct'] > 0).sum())
+            win_rate = f"{wins / n_trades * 100:.0f}"
+            avg_pnl = float(trades_df['pnl_pct'].mean())
+            total_pnl = float(trades_df['pnl_pct'].sum())
+        else:
+            win_rate, avg_pnl, total_pnl = "—", 0.0, 0.0
+
+        avg_c = '#22c55e' if avg_pnl >= 0 else '#ef4444'
+        tot_c = '#22c55e' if total_pnl >= 0 else '#ef4444'
+        avg_s = f"{'+'if avg_pnl>=0 else''}{avg_pnl:.1f}%"
+        tot_s = f"{'+'if total_pnl>=0 else''}{total_pnl:.1f}%"
+
+        # Indicator JS
+        indicator_js = ''
+        for name, color, data_json in indicator_lines:
+            var_name = ''.join(c if c.isalnum() else '_' for c in name)
+            indicator_js += (
+                f"cs{var_name}=chart.addLineSeries({{color:'{color}',"
+                f"lineWidth:2,title:'{name}'}});"
+                f"cs{var_name}.setData({data_json});\n    "
             )
 
-            line_df = pd.DataFrame({
-                'time': [entry_time, exit_time],
-                f'trade_{_}': [entry_price, exit_price]
-            })
-            line.set(line_df)
+        return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>{symbol} — Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0c0e15;color:#e2e8f0;font-family:'DM Mono',monospace;height:100vh;overflow:hidden}}
+#app{{display:flex;height:100vh}}
+#chart-area{{flex:1;position:relative;min-width:0}}
+#chart{{width:100%;height:100%}}
+#legend{{position:absolute;top:12px;left:16px;z-index:10;font-size:12px;color:#94a3b8;pointer-events:none}}
+#panel{{width:280px;background:#111622;border-left:1px solid #1e2531;display:flex;flex-direction:column;flex-shrink:0}}
+.ph{{padding:16px;border-bottom:1px solid #1e2531}}
+.pt{{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:15px;letter-spacing:1px;text-transform:uppercase;color:#f8fafc}}
+.ps{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}}
+.st{{background:#161d2e;border-radius:6px;padding:8px 10px}}
+.sl{{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.8px}}
+.sv{{font-size:13px;font-weight:500;margin-top:2px}}
+.tl{{flex:1;overflow-y:auto;padding:8px}}
+.ti{{background:#161d2e;border-radius:6px;padding:10px 12px;margin-bottom:4px;cursor:pointer;border:1px solid transparent;transition:border-color .12s,background .12s}}
+.ti:hover{{border-color:#3b82f6;background:#182040}}
+.ti.active{{border-color:#3b82f6;box-shadow:0 0 12px rgba(59,130,246,.15)}}
+.tr{{display:flex;justify-content:space-between;align-items:center}}
+.td{{font-size:10px;color:#64748b}}
+.tp{{font-size:11px;margin-top:4px;color:#94a3b8}}
+.tpnl{{font-weight:600;font-size:13px}}
+.w{{color:#22c55e}}.l{{color:#ef4444}}
+.tl::-webkit-scrollbar{{width:5px}}
+.tl::-webkit-scrollbar-track{{background:transparent}}
+.tl::-webkit-scrollbar-thumb{{background:#1e2531;border-radius:3px}}
+.nt{{padding:32px 16px;text-align:center;color:#475569;font-size:12px}}
+.cm{{position:absolute;pointer-events:none;z-index:5;width:0;height:0}}
+.cm-b{{border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:18px solid #ffe000;filter:drop-shadow(0 0 6px rgba(255,224,0,.7))}}
+.cm-s{{border-left:10px solid transparent;border-right:10px solid transparent;border-top:18px solid #00bfff;filter:drop-shadow(0 0 6px rgba(0,191,255,.7))}}
+.nav{{display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid #1e2531}}
+.nav button{{flex:1;padding:6px;background:#161d2e;border:1px solid #1e2531;border-radius:4px;color:#94a3b8;font-family:inherit;font-size:10px;cursor:pointer;transition:all .12s}}
+.nav button:hover{{background:#1e2540;border-color:#3b82f6;color:#e2e8f0}}
+</style></head><body>
+<div id="app">
+  <div id="chart-area"><div id="legend"></div><div id="chart"></div></div>
+  <div id="panel">
+    <div class="ph">
+      <div class="pt">{symbol} Trades</div>
+      <div class="ps">
+        <div class="st"><div class="sl">Trades</div><div class="sv">{n_trades}</div></div>
+        <div class="st"><div class="sl">Win Rate</div><div class="sv">{win_rate}%</div></div>
+        <div class="st"><div class="sl">Avg P&amp;L</div><div class="sv" style="color:{avg_c}">{avg_s}</div></div>
+        <div class="st"><div class="sl">Total P&amp;L</div><div class="sv" style="color:{tot_c}">{tot_s}</div></div>
+      </div>
+    </div>
+    <div class="nav">
+      <button onclick="prevTrade()">&#9664; Prev</button>
+      <button onclick="showAll()">Show All</button>
+      <button onclick="nextTrade()">Next &#9654;</button>
+    </div>
+    <div class="tl" id="tl"></div>
+  </div>
+</div>
+<script>
+var tData={trades_json};
+var curIdx=-1;
+
+// Panel de trades
+var tl=document.getElementById('tl');
+if(tData.length===0){{tl.innerHTML='<div class="nt">Sin trades en este rango</div>';}}
+tData.forEach(function(t,i){{
+  var cls=t.pnl>=0?'w':'l';
+  var sign=t.pnl>=0?'+':'';
+  var d=new Date(t.et*1000);
+  var ds=d.toLocaleDateString('es',{{month:'short',day:'numeric'}})+' '+d.toLocaleTimeString('es',{{hour:'2-digit',minute:'2-digit'}});
+  var div=document.createElement('div');
+  div.className='ti';
+  div.id='t'+i;
+  div.innerHTML='<div class="tr"><span class="td">#'+(i+1)+' \\u00b7 '+ds+'</span><span class="tpnl '+cls+'">'+sign+t.pnl.toFixed(1)+'%</span></div><div class="tp"><span style="color:#22c55e">\\u25b2 '+t.ep.toFixed(0)+'</span> <span style="color:#475569">\\u2192</span> <span style="color:#ef4444">\\u25bc '+t.xp.toFixed(0)+'</span></div>';
+  div.onclick=function(){{goToTrade(i);}};
+  tl.appendChild(div);
+}});
+
+function goToTrade(i){{
+  if(i<0||i>=tData.length)return;
+  curIdx=i;
+  var t=tData[i];
+  var pad=Math.max((t.xt-t.et)*0.5,7200);
+  chart.timeScale().setVisibleRange({{from:t.et-pad,to:t.xt+pad}});
+  document.querySelectorAll('.ti').forEach(function(el,j){{el.classList.toggle('active',j===i);}});
+  var el=document.getElementById('t'+i);
+  if(el)el.scrollIntoView({{block:'nearest',behavior:'smooth'}});
+}}
+function prevTrade(){{goToTrade(Math.max(0,(curIdx<0?0:curIdx)-1));}}
+function nextTrade(){{goToTrade(Math.min(tData.length-1,(curIdx<0?0:curIdx)+1));}}
+function showAll(){{
+  if(tData.length>0){{
+    chart.timeScale().setVisibleRange({{from:tData[0].et-86400,to:tData[tData.length-1].xt+86400}});
+  }}else{{chart.timeScale().fitContent();}}
+  curIdx=-1;
+  document.querySelectorAll('.ti').forEach(function(el){{el.classList.remove('active');}});
+}}
+
+// Chart
+var chartArea=document.getElementById('chart-area');
+var chart=LightweightCharts.createChart(document.getElementById('chart'),{{
+  width:chartArea.clientWidth,height:chartArea.clientHeight,
+  layout:{{background:{{type:'solid',color:'#0c0e15'}},textColor:'#64748b',fontSize:11}},
+  grid:{{vertLines:{{color:'#1e2531'}},horzLines:{{color:'#1e2531'}}}},
+  crosshair:{{mode:LightweightCharts.CrosshairMode.Normal}},
+  rightPriceScale:{{borderColor:'#1e2531'}},
+  timeScale:{{borderColor:'#1e2531',timeVisible:true,secondsVisible:false,rightOffset:12,barSpacing:6}},
+  watermark:{{text:'{symbol}',color:'rgba(100,116,139,0.08)',visible:true,fontSize:64,horzAlign:'center',vertAlign:'center'}},
+}});
+
+var cs=chart.addCandlestickSeries({{
+  upColor:'#22c55e',downColor:'#ef4444',
+  borderUpColor:'#22c55e',borderDownColor:'#ef4444',
+  wickUpColor:'#22c55e',wickDownColor:'#ef4444',
+}});
+cs.priceScale().applyOptions({{scaleMargins:{{top:0.05,bottom:0.25}}}});
+cs.setData({candle_json});
+cs.setMarkers({markers_json});
+
+try{{
+  var vs=chart.addHistogramSeries({{priceFormat:{{type:'volume'}},priceScaleId:'vol'}});
+  chart.priceScale('vol').applyOptions({{scaleMargins:{{top:0.75,bottom:0}},drawTicks:false}});
+  vs.setData({volume_json});
+}}catch(e){{console.warn('Vol:',e);}}
+
+try{{{indicator_js}}}catch(e){{console.warn('Ind:',e);}}
+
+// Vista inicial: primer trade o últimas 200 barras
+if(tData.length>0){{goToTrade(0);}}
+else if({total_bars}>200){{chart.timeScale().setVisibleLogicalRange({{from:{total_bars-200},to:{total_bars+10}}});}}
+else{{chart.timeScale().fitContent();}}
+
+// Legend OHLC
+var leg=document.getElementById('legend');
+chart.subscribeCrosshairMove(function(p){{
+  if(!p||!p.time){{leg.innerHTML='';return;}}
+  var d=p.seriesData.get(cs);if(!d)return;
+  var c=d.close>=d.open?'#22c55e':'#ef4444';
+  leg.innerHTML='<span style="color:'+c+'">{symbol}</span> O:'+d.open.toFixed(2)+' H:'+d.high.toFixed(2)+' L:'+d.low.toFixed(2)+' C:'+d.close.toFixed(2);
+}});
+
+// Resize
+new ResizeObserver(function(){{chart.resize(chartArea.clientWidth,chartArea.clientHeight);}}).observe(chartArea);
+
+// Custom HTML markers: triangulos posicionados sobre las barras
+var mkd=[];
+tData.forEach(function(t){{mkd.push({{t:t.et,p:t.ep,b:1}});mkd.push({{t:t.xt,p:t.xp,b:0}});}});
+function rMk(){{
+  chartArea.querySelectorAll('.cm').forEach(function(e){{e.remove();}});
+  mkd.forEach(function(m){{
+    var x=chart.timeScale().timeToCoordinate(m.t);
+    var y=cs.priceToCoordinate(m.p);
+    if(x===null||y===null)return;
+    var d=document.createElement('div');
+    d.className='cm '+(m.b?'cm-b':'cm-s');
+    d.style.left=(x-10)+'px';
+    d.style.top=(m.b?y:(y-18))+'px';
+    chartArea.appendChild(d);
+  }});
+}}
+chart.timeScale().subscribeVisibleLogicalRangeChange(function(){{setTimeout(rMk,50);}});
+setTimeout(rMk,400);
+
+// Keyboard navigation
+document.addEventListener('keydown',function(e){{
+  if(e.key==='ArrowLeft')prevTrade();
+  if(e.key==='ArrowRight')nextTrade();
+}});
+</script></body></html>"""
 
 
 # Alias de compatibilidad: por defecto usa el interactivo
