@@ -286,7 +286,7 @@ class BacktestVisualizerInteractive:
                 'time': int(entry_time.value // 10**9),
                 'position': 'belowBar',
                 'shape': 'arrowUp',
-                'color': '#00E676',
+                'color': '#00bfff',
                 'text': f'BUY {entry_price:.0f}',
                 'size': 2,
             })
@@ -294,7 +294,7 @@ class BacktestVisualizerInteractive:
                 'time': int(exit_time.value // 10**9),
                 'position': 'aboveBar',
                 'shape': 'arrowDown',
-                'color': '#FF1744',
+                'color': '#ffe000',
                 'text': f'SELL {exit_price:.0f} | {pnl_sign}{pnl_pct:.1f}%',
                 'size': 2,
             })
@@ -330,10 +330,19 @@ class BacktestVisualizerInteractive:
         return result
 
     def _serialize_trades_for_panel(self) -> str:
-        """Trades → JSON para el panel de navegación."""
+        """Trades → JSON para el panel de navegación con métricas detalladas."""
         trades = self._filtered_trades
         if trades.empty:
             return '[]'
+
+        def sf(trade, key):
+            """Safe float: handles NaN, Inf, missing keys."""
+            try:
+                v = float(trade.get(key, 0))
+                return v if np.isfinite(v) else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
         result = []
         for _, trade in trades.iterrows():
             entry_time = pd.to_datetime(trade['entry_timestamp'])
@@ -343,7 +352,20 @@ class BacktestVisualizerInteractive:
                 'xt': int(exit_time.value // 10**9),
                 'ep': float(trade['entry_price']),
                 'xp': float(trade['exit_price']),
-                'pnl': float(trade.get('pnl_pct', 0)),
+                'pnl': sf(trade, 'pnl_pct'),
+                'amt': sf(trade, 'net_profit_loss'),
+                'dur': int(sf(trade, 'duration_bars')),
+                'mae': sf(trade, 'MAE'),
+                'mfe': sf(trade, 'MFE'),
+                'eff': sf(trade, 'profit_efficiency'),
+                'dd': sf(trade, 'trade_drawdown'),
+                'rr': sf(trade, 'risk_reward_ratio'),
+                'bil': int(sf(trade, 'bars_in_loss')),
+                'bip': int(sf(trade, 'bars_in_profit')),
+                'vol': sf(trade, 'trade_volatility'),
+                'fees': sf(trade, 'total_fees'),
+                'slip': sf(trade, 'total_slippage'),
+                'risk': sf(trade, 'riesgo_aplicado'),
             })
         return json.dumps(result)
 
@@ -351,12 +373,12 @@ class BacktestVisualizerInteractive:
         """Genera HTML con chart + panel lateral de trades."""
         candle_json = self._serialize_candle_data()
         volume_json = self._serialize_volume_data()
-        markers_json = self._serialize_markers()
         trades_json = self._serialize_trades_for_panel()
         indicator_lines = self._serialize_indicator_data(indicators)
 
         total_bars = len(self._filtered_market)
         symbol = self.strategy.symbol
+        bar_hours = self.strategy.timeframe.hours
         trades_df = self._filtered_trades
         n_trades = len(trades_df)
 
@@ -409,7 +431,7 @@ body{{background:#0c0e15;color:#e2e8f0;font-family:'DM Mono',monospace;height:10
 .ti.active{{border-color:#3b82f6;box-shadow:0 0 12px rgba(59,130,246,.15)}}
 .tr{{display:flex;justify-content:space-between;align-items:center}}
 .td{{font-size:10px;color:#64748b}}
-.tp{{font-size:11px;margin-top:4px;color:#94a3b8}}
+.tp{{font-size:11px;margin-top:4px;color:#94a3b8;display:flex;justify-content:space-between;align-items:center}}
 .tpnl{{font-weight:600;font-size:13px}}
 .w{{color:#22c55e}}.l{{color:#ef4444}}
 .tl::-webkit-scrollbar{{width:5px}}
@@ -417,11 +439,23 @@ body{{background:#0c0e15;color:#e2e8f0;font-family:'DM Mono',monospace;height:10
 .tl::-webkit-scrollbar-thumb{{background:#1e2531;border-radius:3px}}
 .nt{{padding:32px 16px;text-align:center;color:#475569;font-size:12px}}
 .cm{{position:absolute;pointer-events:none;z-index:5;width:0;height:0}}
-.cm-b{{border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:18px solid #ffe000;filter:drop-shadow(0 0 6px rgba(255,224,0,.7))}}
-.cm-s{{border-left:10px solid transparent;border-right:10px solid transparent;border-top:18px solid #00bfff;filter:drop-shadow(0 0 6px rgba(0,191,255,.7))}}
+.cm-b{{border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:18px solid #00bfff;filter:drop-shadow(0 0 6px rgba(0,191,255,.7))}}
+.cm-s{{border-left:10px solid transparent;border-right:10px solid transparent;border-top:18px solid #ffe000;filter:drop-shadow(0 0 6px rgba(255,224,0,.7))}}
 .nav{{display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid #1e2531}}
 .nav button{{flex:1;padding:6px;background:#161d2e;border:1px solid #1e2531;border-radius:4px;color:#94a3b8;font-family:inherit;font-size:10px;cursor:pointer;transition:all .12s}}
 .nav button:hover{{background:#1e2540;border-color:#3b82f6;color:#e2e8f0}}
+.fb{{display:flex;gap:3px;padding:6px 16px 8px;border-bottom:1px solid #1e2531;flex-wrap:wrap}}
+.fc{{padding:3px 7px;background:#161d2e;border:1px solid #1e2531;border-radius:3px;color:#64748b;font-family:inherit;font-size:9px;cursor:pointer;transition:all .15s;letter-spacing:.5px;text-transform:uppercase}}
+.fc:hover{{color:#94a3b8;border-color:#475569}}
+.fc.an{{background:#1e2540;border-color:#3b82f6;color:#e2e8f0}}
+.fc.aw{{background:#052e16;border-color:#22c55e;color:#4ade80}}
+.fc.al{{background:#2a0a0a;border-color:#ef4444;color:#f87171}}
+.tamt{{font-size:10px;font-weight:600}}
+.tdd{{display:none;grid-template-columns:1fr 1fr;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid #1e2531}}
+.ti.active .tdd{{display:grid}}
+.dm{{padding:4px 6px;background:#0c0e15;border-radius:4px}}
+.dm-l{{font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px}}
+.dm-v{{font-size:11px;color:#cbd5e1;margin-top:1px}}
 </style></head><body>
 <div id="app">
   <div id="chart-area"><div id="legend"></div><div id="chart"></div></div>
@@ -440,28 +474,56 @@ body{{background:#0c0e15;color:#e2e8f0;font-family:'DM Mono',monospace;height:10
       <button onclick="showAll()">Show All</button>
       <button onclick="nextTrade()">Next &#9654;</button>
     </div>
+    <div class="fb">
+      <button class="fc an" data-f="all" onclick="ftrade('all')">ALL</button>
+      <button class="fc" data-f="w10" onclick="ftrade('w10')" title="Top 10 Winners">BEST 10</button>
+      <button class="fc" data-f="l10" onclick="ftrade('l10')" title="Top 10 Losers">WORST 10</button>
+    </div>
     <div class="tl" id="tl"></div>
   </div>
 </div>
 <script>
 var tData={trades_json};
 var curIdx=-1;
+var barH={bar_hours};
+function fmtT(b){{var h=b*barH;if(h<1)return Math.round(h*60)+'m';if(h<24)return(h%1===0?h:h.toFixed(1))+'h';var d=h/24;return(d%1===0?d:d.toFixed(1))+'d';}}
 
 // Panel de trades
 var tl=document.getElementById('tl');
-if(tData.length===0){{tl.innerHTML='<div class="nt">Sin trades en este rango</div>';}}
-tData.forEach(function(t,i){{
-  var cls=t.pnl>=0?'w':'l';
-  var sign=t.pnl>=0?'+':'';
-  var d=new Date(t.et*1000);
-  var ds=d.toLocaleDateString('es',{{month:'short',day:'numeric'}})+' '+d.toLocaleTimeString('es',{{hour:'2-digit',minute:'2-digit'}});
-  var div=document.createElement('div');
-  div.className='ti';
-  div.id='t'+i;
-  div.innerHTML='<div class="tr"><span class="td">#'+(i+1)+' \\u00b7 '+ds+'</span><span class="tpnl '+cls+'">'+sign+t.pnl.toFixed(1)+'%</span></div><div class="tp"><span style="color:#22c55e">\\u25b2 '+t.ep.toFixed(0)+'</span> <span style="color:#475569">\\u2192</span> <span style="color:#ef4444">\\u25bc '+t.xp.toFixed(0)+'</span></div>';
-  div.onclick=function(){{goToTrade(i);}};
-  tl.appendChild(div);
-}});
+var allIdx=tData.map(function(_,i){{return i;}});
+function rTl(idxs){{
+  tl.innerHTML='';
+  if(idxs.length===0){{tl.innerHTML='<div class="nt">Sin trades</div>';return;}}
+  idxs.forEach(function(i){{
+    var t=tData[i];
+    var cls=t.pnl>=0?'w':'l';
+    var sign=t.pnl>=0?'+':'';
+    var asign=t.amt>=0?'+':'';
+    var d=new Date(t.et*1000);
+    var ds=d.toLocaleDateString('es',{{month:'short',day:'numeric'}})+' '+d.toLocaleTimeString('es',{{hour:'2-digit',minute:'2-digit'}});
+    var div=document.createElement('div');
+    div.className='ti';
+    div.id='t'+i;
+    div.innerHTML='<div class="tr"><span class="td">#'+(i+1)+' \\u00b7 '+ds+'</span><span class="tpnl '+cls+'">'+sign+t.pnl.toFixed(1)+'%</span></div><div class="tp"><div><span style="color:#22c55e">\\u25b2 '+t.ep.toFixed(0)+'</span> <span style="color:#475569">\\u2192</span> <span style="color:#ef4444">\\u25bc '+t.xp.toFixed(0)+'</span></div><span class="tamt '+cls+'">'+asign+t.amt.toFixed(2)+'</span></div><div class="tdd"><div class="dm"><div class="dm-l">Duration</div><div class="dm-v">'+fmtT(t.dur)+' <span style="color:#475569">('+t.dur+'b)</span></div></div><div class="dm"><div class="dm-l">Volatility</div><div class="dm-v">'+t.vol.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">MAE</div><div class="dm-v" style="color:#ef4444">'+t.mae.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">MFE</div><div class="dm-v" style="color:#22c55e">'+t.mfe.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">Efficiency</div><div class="dm-v">'+t.eff.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">R:R Ratio</div><div class="dm-v">'+t.rr.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">Drawdown</div><div class="dm-v" style="color:#ef4444">'+t.dd.toFixed(2)+'%</div></div><div class="dm"><div class="dm-l">Risk</div><div class="dm-v">'+t.risk.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">Time Loss</div><div class="dm-v" style="color:#ef4444">'+fmtT(t.bil)+'</div></div><div class="dm"><div class="dm-l">Time Profit</div><div class="dm-v" style="color:#22c55e">'+fmtT(t.bip)+'</div></div><div class="dm"><div class="dm-l">Fees</div><div class="dm-v">'+t.fees.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">Slippage</div><div class="dm-v">'+t.slip.toFixed(2)+'</div></div></div>';
+    div.onclick=function(){{goToTrade(i);}};
+    tl.appendChild(div);
+  }});
+}}
+rTl(allIdx);
+function ftrade(mode){{
+  var idxs;
+  if(mode==='all'){{idxs=allIdx;}}
+  else{{
+    var asc=mode[0]==='l';
+    var sorted=allIdx.slice().sort(function(a,b){{return asc?tData[a].pnl-tData[b].pnl:tData[b].pnl-tData[a].pnl;}});
+    var n=mode.indexOf('10')>-1?10:5;
+    idxs=sorted.slice(0,Math.min(n,sorted.length));
+  }}
+  rTl(idxs);
+  document.querySelectorAll('.fc').forEach(function(el){{el.className='fc';}});
+  var btn=document.querySelector('[data-f="'+mode+'"]');
+  if(btn)btn.classList.add(mode[0]==='w'?'aw':mode[0]==='l'?'al':'an');
+}}
 
 function goToTrade(i){{
   if(i<0||i>=tData.length)return;
@@ -469,7 +531,7 @@ function goToTrade(i){{
   var t=tData[i];
   var pad=Math.max((t.xt-t.et)*0.5,7200);
   chart.timeScale().setVisibleRange({{from:t.et-pad,to:t.xt+pad}});
-  document.querySelectorAll('.ti').forEach(function(el,j){{el.classList.toggle('active',j===i);}});
+  document.querySelectorAll('.ti').forEach(function(el){{el.classList.toggle('active',el.id==='t'+i);}});
   var el=document.getElementById('t'+i);
   if(el)el.scrollIntoView({{block:'nearest',behavior:'smooth'}});
 }}
@@ -502,7 +564,6 @@ var cs=chart.addCandlestickSeries({{
 }});
 cs.priceScale().applyOptions({{scaleMargins:{{top:0.05,bottom:0.25}}}});
 cs.setData({candle_json});
-cs.setMarkers({markers_json});
 
 try{{
   var vs=chart.addHistogramSeries({{priceFormat:{{type:'volume'}},priceScaleId:'vol'}});
