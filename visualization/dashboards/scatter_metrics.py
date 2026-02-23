@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from visualization.theme import apply_dashboard_style
+
 def visualize_metrics_vs_mae(df_trade_metrics, save_path=None):
     """
     Genera gráficos de dispersión mostrando la relación entre:
@@ -11,13 +13,7 @@ def visualize_metrics_vs_mae(df_trade_metrics, save_path=None):
     - MAE vs Profit Efficiency
     - MAE vs Trade Volatility
     """
-    sns.set_theme(style="whitegrid")
-    
-    colors = {
-        'profit': '#006D77',      
-        'loss': '#E29578',        
-        'text': '#333333',       
-    }
+    colors = apply_dashboard_style()
 
     required_metrics = ['MAE', 'MFE', 'risk_reward_ratio', 'profit_efficiency', 'trade_volatility']
     missing_metrics = [m for m in required_metrics if m not in df_trade_metrics.columns]
@@ -126,12 +122,7 @@ def visualize_metrics_vs_mfe(df_trade_metrics, save_path=None):
     - MFE vs Profit Efficiency
     - MFE vs Trade Volatility
     """
-    sns.set_theme(style="whitegrid")
-    colors = {
-        'profit': '#006D77',      
-        'loss': '#E29578',        
-        'text': '#333333',       
-    }
+    colors = apply_dashboard_style()
     required_metrics = ['MFE', 'MAE', 'risk_reward_ratio', 'profit_efficiency', 'trade_volatility']
     missing_metrics = [m for m in required_metrics if m not in df_trade_metrics.columns]
     if missing_metrics:
@@ -238,12 +229,7 @@ def visualize_metrics_vs_risk_reward(df_trade_metrics, save_path=None):
     - Risk-Reward Ratio vs Profit Efficiency
     - Risk-Reward Ratio vs Trade Volatility
     """
-    sns.set_theme(style="whitegrid")
-    colors = {
-        'profit': '#006D77',      
-        'loss': '#E29578',        
-        'text': '#333333',       
-    }
+    colors = apply_dashboard_style()
     required_metrics = ['risk_reward_ratio', 'MAE', 'MFE', 'profit_efficiency', 'trade_volatility']
     missing_metrics = [m for m in required_metrics if m not in df_trade_metrics.columns]
     if missing_metrics:
@@ -350,12 +336,7 @@ def visualize_metrics_vs_volatility(df_trade_metrics, save_path=None):
     - Trade Volatility vs Risk-Reward Ratio
     - Trade Volatility vs Profit Efficiency
     """
-    sns.set_theme(style="whitegrid")
-    colors = {
-        'profit': '#006D77',      
-        'loss': '#E29578',        
-        'text': '#333333',       
-    }
+    colors = apply_dashboard_style()
     required_metrics = ['trade_volatility', 'MAE', 'MFE', 'risk_reward_ratio', 'profit_efficiency']
     missing_metrics = [m for m in required_metrics if m not in df_trade_metrics.columns]
     if missing_metrics:
@@ -462,12 +443,7 @@ def visualize_metrics_vs_profit_efficiency(df_trade_metrics, save_path=None):
     - Profit Efficiency vs Risk-Reward Ratio
     - Profit Efficiency vs Trade Volatility
     """
-    sns.set_theme(style="whitegrid")
-    colors = {
-        'profit': '#006D77',      
-        'loss': '#E29578',        
-        'text': '#333333',       
-    }
+    colors = apply_dashboard_style()
     required_metrics = ['profit_efficiency', 'MAE', 'MFE', 'risk_reward_ratio', 'trade_volatility']
     missing_metrics = [m for m in required_metrics if m not in df_trade_metrics.columns]
     if missing_metrics:

@@ -6,26 +6,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-def set_style():
-    """Configura el estilo global para todas las visualizaciones"""
-    sns.set_theme(style="whitegrid")
-    plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans']
-    
-    # Paleta de colores personalizada
-    return {
-        'profit': '#006D77',       # Color para ganancias
-        'loss': '#E29578',         # Color para pérdidas
-        'text': '#333333',         # Color de texto
-    }
+from visualization.theme import apply_dashboard_style
 
 def visualize_metrics_distribution(strategy, df_trade_metrics, save_path=None):
     """
     Función principal para generar el dashboard de distribución de métricas.
     """
     # Configurar estilo
-    colors = set_style()
+    colors = apply_dashboard_style()
     
     # Extraer información de la estrategia
     strategy_info = {

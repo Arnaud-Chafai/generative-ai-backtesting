@@ -5,12 +5,14 @@ CRYPTO_CONFIG = {
             "exchange_fee": 0.001,  # 0.1% en Binance
             "slippage": 0.0002,  # 0.02% de slippage estimado
             "price_precision": 2,
+            "quote_currency": "USDT",
         },
         "ETH": {
             "tick_size": 0.01,
             "exchange_fee": 0.001,
             "slippage": 0.0002,
             "price_precision": 2,
+            "quote_currency": "USDT",
         }
     },
     "Kucoin": {
@@ -19,12 +21,14 @@ CRYPTO_CONFIG = {
             "exchange_fee": 0.0008,  # 🔹 0.08% de fee en Kucoin
             "slippage": 0.0003,  # 🔹 Slippage ligeramente mayor en Kucoin
             "price_precision": 4,  # 🔹 Más decimales en precios
+            "quote_currency": "USDT",
         },
         "ETH": {
             "tick_size": 0.0001,
             "exchange_fee": 0.0008,
             "slippage": 0.0003,
             "price_precision": 4,
+            "quote_currency": "USDT",
         }
     }
 }

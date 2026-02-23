@@ -150,10 +150,12 @@ class DataTransformer:
 
     def calculate_vwap(self) -> 'DataTransformer':
         """
-        Calcula el precio promedio ponderado por volumen (VWAP) y lo añade al DataFrame.
+        Calcula el VWAP (Volume Weighted Average Price) con reset diario.
         """
-        # Calcular el precio promedio ponderado por volumen (VWAP)
-        self.df["VWAP"] = (self.df["Close"] * self.df["Volume"]).cumsum() / self.df["Volume"].cumsum().round(3)
+        tp = (self.df["High"] + self.df["Low"] + self.df["Close"]) / 3
+        tp_vol = tp * self.df["Volume"]
+        date = self.df.index.date
+        self.df["VWAP"] = tp_vol.groupby(date).cumsum() / self.df["Volume"].groupby(date).cumsum()
         return self
 
 
@@ -451,7 +453,7 @@ class DataTransformer:
 
     def prepare_data(self, timeframes: list, ema_periods: list, volatility_periods: list,
                         pct_change_periods: list, volume_periods: list, cumulative_volume_periods: list,
-                        obp_range: int) -> dict:
+                        obp_range: int, heikin_ashi: bool = False) -> dict:
             """
             Prepara los datos resampleando, calculando indicadores y limpiando los datos.
 
@@ -463,6 +465,7 @@ class DataTransformer:
                 volume_periods (list): Períodos para calcular cambios porcentuales de volumen.
                 cumulative_volume_periods (list): Períodos para calcular el volumen acumulativo.
                 obp_range (int): Rango máximo para detectar patrones OBP extendidos.
+                heikin_ashi (bool): Si True, convierte velas a Heikin Ashi antes de calcular indicadores.
 
             Returns:
                 dict: Diccionario con DataFrames procesados para cada timeframe.
@@ -478,9 +481,10 @@ class DataTransformer:
 
                 # Procesar los datos resampleados
                 transformer_resampled = DataTransformer(resampled_df)
+                if heikin_ashi:
+                    transformer_resampled.convert_to_heiken_ashi()
                 enriched_df = (
                     transformer_resampled
-                    .convert_to_heiken_ashi()
                     .calculate_ema(ema_periods)
                     .calculate_volatility_pct_change(volatility_periods)
                     .calculate_pct_change(pct_change_periods)

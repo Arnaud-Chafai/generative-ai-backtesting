@@ -36,6 +36,7 @@ class BacktestRunner:
         self.engine: BacktestEngine | None = None
         self.results: pd.DataFrame | None = None
         self.metrics: MetricsAggregator | None = None
+        self.market_config: dict | None = None
     
     def run(self, verbose: bool = True) -> pd.DataFrame:
         """
@@ -67,7 +68,8 @@ class BacktestRunner:
             exchange=self.strategy.exchange,
             symbol=self.strategy.symbol
         )
-        
+        self.market_config = market_config
+
         self.engine = BacktestEngine(
             initial_capital=self.strategy.initial_capital,
             market_config=market_config
@@ -131,7 +133,9 @@ class BacktestRunner:
             from visualization.chart_plotter import BacktestVisualizerInteractive
             return BacktestVisualizerInteractive(
                 strategy=self.strategy,
-                trade_metrics_df=self.metrics.trade_metrics_df
+                trade_metrics_df=self.metrics.trade_metrics_df,
+                summary_metrics=self.metrics.all_metrics,
+                quote_currency=self.market_config.get('quote_currency', ''),
             )
         else:
             from visualization.chart_plotter import BacktestVisualizerStatic

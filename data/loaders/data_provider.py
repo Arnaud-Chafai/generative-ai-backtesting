@@ -143,7 +143,10 @@ class CcxtDataProvider:
         self.symbol = symbol
         self.timeframe = timeframe
         self.start_date = start_date
-        self.exchange = getattr(ccxt, exchange)()
+        self.exchange = getattr(ccxt, exchange)({
+            'timeout': 30000,
+            'options': {'defaultType': 'spot'},
+        })
         self.data = pd.DataFrame()
 
         if timeframe not in self._TIMEFRAME_MS:

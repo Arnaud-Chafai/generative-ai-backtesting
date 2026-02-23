@@ -10,58 +10,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.gridspec as gridspec
-from matplotlib.colors import LinearSegmentedColormap
 from utils.timeframe import DAYS_ORDER, MONTHS_ORDER
+from visualization.theme import apply_dashboard_style, PROFIT_LOSS_CMAP as profit_loss_cmap
 
-# Configuración global de estilo
-def set_style():
-    """Configura el estilo global para todas las visualizaciones"""
-    sns.set_theme(style="whitegrid")
-    plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans']
-    plt.rcParams['axes.facecolor'] = '#f5f5f5'
-    plt.rcParams['figure.facecolor'] = 'white'
-    plt.rcParams['grid.color'] = '#dddddd'
-    plt.rcParams['grid.linestyle'] = '-'
-    plt.rcParams['grid.linewidth'] = 0.5
-    
-    # Paleta de colores personalizada
-    return {
-        'profit': '#006D77',       # Color para ganancias
-        'loss': '#E29578',         # Color para pérdidas
-        'neutral': '#EAEAEA',      # Color neutral
-        'accent': '#FFDDD2',       # Color de acento
-        'highlight': '#83C5BE',    # Color para resaltar
-        'text': '#333333',         # Color de texto
-        'grid': '#dddddd',         # Color de la cuadrícula
-        'background': '#f5f5f5'    # Color de fondo
-    }
-
-# Crear paletas personalizadas
-profit_loss_cmap = LinearSegmentedColormap.from_list(
-    "profit_loss",
-    ["#E29578", "#FFFFFF", "#006D77"]  # loss -> neutral -> profit
-)
-
-def create_temporal_heatmap(strategy, df_trade_metrics, metric_column='net_profit_loss', 
+def create_temporal_heatmap(strategy, df_trade_metrics, metric_column='net_profit_loss',
                         figsize=(18, 12), save_path=None):  # Reducimos altura total
     """
     Crea un dashboard con dos heatmaps temporales:
     1. Métrica por hora y día de la semana
     2. Métrica por día del mes y mes
-    
+
     Args:
         strategy: Objeto de estrategia
         df_trade_metrics: DataFrame con métricas de trades
         metric_column: Columna a analizar
         figsize: Tamaño de la figura
         save_path: Ruta para guardar la imagen (opcional)
-        
+
     Returns:
         matplotlib.figure.Figure: La figura generada
     """
     # Configurar estilo
-    colors = set_style()
+    colors = apply_dashboard_style()
     
     # Extraer información de la estrategia
     strategy_info = {
@@ -217,14 +187,14 @@ def create_temporal_heatmap(strategy, df_trade_metrics, metric_column='net_profi
     return fig
 
 
-def create_temporal_heatmap_compact(strategy, df_trade_metrics, metric_column='net_profit_loss', 
+def create_temporal_heatmap_compact(strategy, df_trade_metrics, metric_column='net_profit_loss',
                             figsize=(18, 11), save_path=None):
     """
     Versión más compacta de los heatmaps temporales con menos espacio entre
     el título principal y el primer heatmap.
     """
     # Configurar estilo
-    colors = set_style()
+    colors = apply_dashboard_style()
     
     # Extraer información de la estrategia
     strategy_info = {

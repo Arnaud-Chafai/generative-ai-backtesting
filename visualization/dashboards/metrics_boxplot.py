@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from visualization.theme import apply_dashboard_style
 
 def visualize_metrics_boxplot(strategy, df_trade_metrics, save_path=None):
     """
@@ -10,12 +11,12 @@ def visualize_metrics_boxplot(strategy, df_trade_metrics, save_path=None):
     """
 
     # Configurar estilo
+    _palette = apply_dashboard_style()
     colors = {
-        True: '#006D77',       # Color para ganancias
-        False: '#E29578',      # Color para pérdidas
-        'text': '#333333',     # Color de texto
+        True: _palette['profit'],
+        False: _palette['loss'],
+        'text': _palette['text'],
     }
-    sns.set_theme(style="whitegrid")
 
     # Extraer información de la estrategia
     strategy_info = {

@@ -4,30 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FuncFormatter
-
-# Configuración global de estilo
-def set_style():
-    """Configura el estilo global para todas las visualizaciones"""
-    sns.set_theme(style="whitegrid")
-    plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans']
-    plt.rcParams['axes.facecolor'] = '#f5f5f5'
-    plt.rcParams['figure.facecolor'] = 'white'
-    plt.rcParams['grid.color'] = '#dddddd'
-    plt.rcParams['grid.linestyle'] = '-'
-    plt.rcParams['grid.linewidth'] = 0.5
-    
-    # Paleta de colores personalizada
-    return {
-        'profit': '#006D77',       # Color para ganancias
-        'loss': '#E29578',         # Color para pérdidas
-        'neutral': '#EAEAEA',      # Color neutral
-        'accent': '#FFDDD2',       # Color de acento
-        'highlight': '#83C5BE',    # Color para resaltar
-        'text': '#333333',         # Color de texto
-        'grid': '#dddddd',         # Color de la cuadrícula
-        'background': '#f5f5f5'    # Color de fondo
-    }
+from visualization.theme import apply_dashboard_style
 
 # Modifica esta parte en la función create_performance_dashboard
 def create_performance_dashboard(strategy, df_trade_metrics, figsize=(12, 8), save_path=None):
@@ -44,7 +21,7 @@ def create_performance_dashboard(strategy, df_trade_metrics, figsize=(12, 8), sa
         matplotlib.figure.Figure: La figura generada
     """
     # Configurar estilo
-    colors = set_style()
+    colors = apply_dashboard_style()
     
     # Extraer información de la estrategia
     strategy_info = {

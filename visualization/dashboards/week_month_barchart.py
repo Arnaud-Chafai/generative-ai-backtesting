@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from utils.timeframe import DAYS_ORDER, MONTHS_ORDER
+from visualization.theme import apply_dashboard_style
 
 def time_chart(df_trade_metrics, save_path=None):
     """
@@ -44,11 +45,7 @@ def time_chart(df_trade_metrics, save_path=None):
     ax_day_legend.axis('off')
     
     # Colores
-    colors = {
-        'profit': '#006D77',  # Color para positivo (azul verdoso)
-        'loss': '#E29578',    # Color para negativo (salmón)
-        'text': '#333333'     # Color para texto
-    }
+    colors = apply_dashboard_style()
     
     # --- GRÁFICO DE AÑOS (ARRIBA) ---
     

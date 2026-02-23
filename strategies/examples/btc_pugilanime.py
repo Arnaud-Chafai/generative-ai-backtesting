@@ -7,6 +7,7 @@ que al romperse con volumen ofrecen entradas de alta expectativa siguiendo la te
 Contexto: Impulso tras acumulación en 5min.
 
 v1: Entrada única en pullback a EMA. Trailing stop por ATR.
+v1.1: Detección real de consolidación (filtro ATR-normalizado + invalidación por retorno a zona).
 v2 (pendiente): Averaging con 2-3 entradas + POC detection.
 """
 
@@ -20,18 +21,20 @@ class BTCPugilanime(BaseStrategy):
     Estrategia de tendencia breakout-pullback sobre BTC 5min.
 
     Lógica:
-        1. Detecta breakout: Close > máximo de N períodos + volumen > media * multiplicador
-        2. Espera pullback hasta la EMA de referencia
-        3. Entra en BUY cuando el precio toca la EMA en el pullback
-        4. Gestiona trailing stop por ATR desde el máximo alcanzado
-        5. Invalida si el precio vuelve bajo el mínimo del breakout (regresa al rango)
+        1. Detecta consolidación: rango de N períodos estrecho (< consolidation_threshold ATRs)
+        2. Detecta breakout: Close > máximo del rango + volumen > media * multiplicador
+        3. Invalida breakout si el precio vuelve bajo el piso del rango (breakout falso)
+        4. Espera pullback hasta la EMA de referencia
+        5. Entra en BUY cuando el precio toca la EMA en el pullback
+        6. Gestiona trailing stop por ATR desde el máximo alcanzado
 
     Parámetros optimizables:
-        lookback_period: Períodos para detectar el máximo de la acumulación (10-50)
+        lookback_period: Períodos para detectar el rango de acumulación (10-50)
         ema_period:      EMA de referencia para el pullback (20, 50, 200)
         atr_period:      Períodos del ATR para trailing stop (7-21)
         atr_multiplier:  Multiplicador ATR para el stop (1.5-4.0)
         volume_multiplier: Umbral de volumen vs media del rango (1.2-3.0)
+        consolidation_threshold: Ancho máx del rango en ATRs (1.5-5.0). Bajo = más selectivo.
         position_size_pct: Porcentaje del capital por trade (0.1-0.5)
     """
 
@@ -46,6 +49,7 @@ class BTCPugilanime(BaseStrategy):
         atr_period: int = 14,
         atr_multiplier: float = 2.0,
         volume_multiplier: float = 1.5,
+        consolidation_threshold: float = 3.0,  # Ancho max del rango en ATRs
         position_size_pct: float = 0.5,
         **kwargs
     ):
@@ -63,6 +67,7 @@ class BTCPugilanime(BaseStrategy):
         self.atr_period = int(atr_period)
         self.atr_multiplier = float(atr_multiplier)
         self.volume_multiplier = float(volume_multiplier)
+        self.consolidation_threshold = float(consolidation_threshold)
         self.position_size_pct = float(position_size_pct)
 
         # Pre-calcular indicadores
@@ -82,17 +87,28 @@ class BTCPugilanime(BaseStrategy):
         true_range = high_low.combine(high_close, max).combine(low_close, max)
         self.market_data['ATR'] = true_range.rolling(self.atr_period).mean()
 
+        # Piso del rango (para invalidación de breakout falso)
+        self.market_data['Range_Low'] = self.market_data['Low'].rolling(self.lookback_period).min()
+
+        # Ancho del rango normalizado por volatilidad (bajo = consolidación real)
+        self.market_data['Range_Width_ATR'] = (
+            (self.market_data['Range_High'] - self.market_data['Range_Low']) / self.market_data['ATR']
+        )
+
         print(f"📊 BTCPugilanime configurada:")
         print(f"   - Lookback: {self.lookback_period} períodos")
         print(f"   - EMA pullback: {self.ema_period}")
         print(f"   - ATR trailing: período={self.atr_period}, multiplicador={self.atr_multiplier}")
         print(f"   - Filtro volumen: {self.volume_multiplier}x media")
+        print(f"   - Consolidación: rango < {self.consolidation_threshold} ATRs")
 
     def generate_simple_signals(self) -> list:
         """
         Máquina de estados:
-            SCANNING         → buscando ruptura válida
+            SCANNING         → buscando consolidación + ruptura válida
+                               (rango estrecho < consolidation_threshold ATRs)
             BREAKOUT         → ruptura detectada, esperando pullback a la EMA
+                               Si close < range_low → breakout falso, vuelve a SCANNING
             IN_POSITION      → en trade, gestionando trailing stop ATR
             WAITING_RESET    → trade completado, esperando que precio baje bajo EMA
                                para consumir el movimiento antes del próximo setup
@@ -105,45 +121,76 @@ class BTCPugilanime(BaseStrategy):
         # Estados del loop
         state = "SCANNING"
         breakout_range_high = None   # Nivel de ruptura
+        breakout_range_low = None    # Piso de la zona (para invalidación)
+        seen_above_ema = False       # Precio se alejó de la EMA (confirma impulso)
         max_price_since_entry = None # Para trailing stop ATR
         trailing_stop = None
+
+        # Pre-extraer arrays numpy para velocidad (~10-50x vs .iloc)
+        closes = self.market_data['Close'].values
+        highs = self.market_data['High'].values
+        lows = self.market_data['Low'].values
+        volumes = self.market_data['Volume'].values
+        emas = self.market_data['EMA'].values
+        range_highs = self.market_data['Range_High'].values
+        volume_mas = self.market_data['Volume_MA'].values
+        atrs = self.market_data['ATR'].values
+        range_lows = self.market_data['Range_Low'].values
+        range_width_atrs = self.market_data['Range_Width_ATR'].values
+        timestamps = self.market_data.index
 
         start = max(self.lookback_period, self.ema_period, self.atr_period) + 1
 
         for i in range(start, len(self.market_data)):
-            close = self.market_data['Close'].iloc[i]
-            high = self.market_data['High'].iloc[i]
-            low = self.market_data['Low'].iloc[i]
-            volume = self.market_data['Volume'].iloc[i]
-            ema = self.market_data['EMA'].iloc[i]
-            range_high = self.market_data['Range_High'].iloc[i - 1]  # prev para no usar el actual
-            volume_ma = self.market_data['Volume_MA'].iloc[i - 1]
-            atr = self.market_data['ATR'].iloc[i]
+            close = closes[i]
+            high = highs[i]
+            low = lows[i]
+            volume = volumes[i]
+            ema = emas[i]
+            range_high = range_highs[i - 1]  # prev para no usar el actual
+            volume_ma = volume_mas[i - 1]
+            atr = atrs[i]
+            range_low = range_lows[i - 1]
+            range_width_atr = range_width_atrs[i - 1]
 
             # ----------------------------------------------------------------
             if state == "SCANNING":
                 # Condición de ruptura:
-                # 1. Close supera el máximo de los últimos N períodos
-                # 2. Volumen del breakout > media * multiplicador
+                # 1. Rango estrecho (consolidación real, no tendencia)
+                # 2. Close supera el máximo de los últimos N períodos
+                # 3. Volumen del breakout > media * multiplicador
+                is_consolidation = range_width_atr < self.consolidation_threshold
                 breakout = (
+                    is_consolidation and
                     close > range_high and
                     volume > volume_ma * self.volume_multiplier
                 )
                 if breakout:
                     state = "BREAKOUT"
                     breakout_range_high = range_high  # guardar nivel para invalidación
+                    breakout_range_low = range_low    # guardar piso para invalidación
 
             # ----------------------------------------------------------------
             elif state == "BREAKOUT":
-                # Condición de entrada: precio toca la EMA en el pullback
-                # Y la EMA está por encima del nivel de ruptura.
-                #
+                # Invalidación: precio vuelve a la zona -> breakout falso
+                if close < breakout_range_low:
+                    state = "SCANNING"
+                    breakout_range_high = None
+                    breakout_range_low = None
+                    seen_above_ema = False
+                    continue
+
+                # Fase 1: el precio debe alejarse de la EMA (confirma impulso post-breakout)
+                # Una vela entera por encima de la EMA = el breakout generó movimiento real
+                if not seen_above_ema:
+                    if low > ema:
+                        seen_above_ema = True
+                    continue  # No evaluar entrada hasta confirmar impulso
+
+                # Fase 2: pullback — el precio vuelve a tocar la EMA desde arriba
                 # La EMA actúa como árbitro automático:
                 #   EMA > breakout_range_high → pullback válido, todavía por encima del rango
                 #   EMA < breakout_range_high → pullback demasiado profundo, volvió al rango → no entrar
-                #
-                # No se necesita invalidación explícita: si el pullback es tan profundo que
-                # la EMA queda bajo el nivel de ruptura, simplemente nunca se cumple la condición.
                 #
                 # TODO: explorar Hipótesis B — entrada por % de retroceso en vez de EMA
                 pullback_touched_ema = low <= ema <= close  # el candle toca la EMA
@@ -153,7 +200,7 @@ class BTCPugilanime(BaseStrategy):
                     # Entrada en BUY
                     self.create_simple_signal(
                         signal_type=SignalType.BUY,
-                        timestamp=self.market_data.index[i],
+                        timestamp=timestamps[i],
                         price=close,
                         position_size_pct=self.position_size_pct
                     )
@@ -172,7 +219,7 @@ class BTCPugilanime(BaseStrategy):
                 if close < trailing_stop:
                     self.create_simple_signal(
                         signal_type=SignalType.SELL,
-                        timestamp=self.market_data.index[i],
+                        timestamp=timestamps[i],
                         price=close,
                         position_size_pct=1.0  # cerrar posición completa
                     )
@@ -180,6 +227,8 @@ class BTCPugilanime(BaseStrategy):
                     # precio baje bajo la EMA antes de buscar el próximo setup.
                     state = "WAITING_RESET"
                     breakout_range_high = None
+                    breakout_range_low = None
+                    seen_above_ema = False
                     max_price_since_entry = None
                     trailing_stop = None
 
