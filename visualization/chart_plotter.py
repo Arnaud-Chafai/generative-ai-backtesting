@@ -275,23 +275,41 @@ class BacktestVisualizerInteractive:
             return '[]'
 
         markers = []
+
+        # BUY markers: usar señales individuales si disponibles (muestra cada entrada DCA)
+        buy_signals = self._get_individual_buy_signals()
+        if buy_signals:
+            for sig in buy_signals:
+                sig_time = pd.to_datetime(sig.timestamp)
+                markers.append({
+                    'time': int(sig_time.value // 10**9),
+                    'position': 'belowBar',
+                    'shape': 'arrowUp',
+                    'color': '#00bfff',
+                    'text': f'BUY {sig.price:.0f}',
+                    'size': 2,
+                })
+        else:
+            # Fallback: usar entry del DataFrame (1 marker por trade)
+            for _, trade in trades.iterrows():
+                entry_time = pd.to_datetime(trade['entry_timestamp'])
+                entry_price = trade['entry_price']
+                markers.append({
+                    'time': int(entry_time.value // 10**9),
+                    'position': 'belowBar',
+                    'shape': 'arrowUp',
+                    'color': '#00bfff',
+                    'text': f'BUY {entry_price:.0f}',
+                    'size': 2,
+                })
+
+        # SELL markers: siempre del DataFrame de trades (tiene P&L)
         for _, trade in trades.iterrows():
-            entry_time = pd.to_datetime(trade['entry_timestamp'])
             exit_time = pd.to_datetime(trade['exit_timestamp'])
-            entry_price = trade['entry_price']
             exit_price = trade['exit_price']
             net_pnl = trade.get('net_profit_loss', 0)
             pnl_pct = trade.get('pnl_pct', 0)
             pnl_sign = '+' if net_pnl >= 0 else ''
-
-            markers.append({
-                'time': int(entry_time.value // 10**9),
-                'position': 'belowBar',
-                'shape': 'arrowUp',
-                'color': '#00bfff',
-                'text': f'BUY {entry_price:.0f}',
-                'size': 2,
-            })
             markers.append({
                 'time': int(exit_time.value // 10**9),
                 'position': 'aboveBar',
@@ -304,6 +322,22 @@ class BacktestVisualizerInteractive:
         # CRITICAL: markers MUST be sorted by time or they become invisible
         markers.sort(key=lambda m: m['time'])
         return json.dumps(markers)
+
+    def _get_individual_buy_signals(self) -> list:
+        """Obtiene señales BUY individuales de la estrategia (para DCA multi-entry)."""
+        signals = getattr(self.strategy, 'simple_signals', None)
+        if not signals:
+            return []
+        from models.enums import SignalType
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+        # Solo usar si hay más señales BUY que trades (indica DCA/multi-entry)
+        trades = self._filtered_trades
+        if len(buy_signals) <= len(trades):
+            return []
+        # Filtrar por rango temporal del chart
+        t_start = self._filtered_market.index.min()
+        t_end = self._filtered_market.index.max()
+        return [s for s in buy_signals if t_start <= pd.to_datetime(s.timestamp) <= t_end]
 
     def _serialize_indicator_data(self, indicators) -> list:
         """Columnas de indicadores → lista de (nombre, color, json_data)."""
@@ -379,7 +413,7 @@ class BacktestVisualizerInteractive:
 
         def fv(key, fmt='.2f', suffix='', color=None):
             val = m.get(key)
-            if val is None or (isinstance(val, float) and not np.isfinite(val)):
+            if val is None or isinstance(val, str) or (isinstance(val, float) and not np.isfinite(val)):
                 return '<span style="color:#475569">\u2014</span>'
             if fmt == 'd':
                 text = str(int(val))
@@ -543,7 +577,7 @@ body{{background:#0c0e15;color:#e2e8f0;font-family:'DM Mono',monospace;height:10
 .tdd{{display:none;grid-template-columns:1fr 1fr;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid #1e2531}}
 .ti.active .tdd{{display:grid}}
 .dm{{padding:4px 6px;background:#0c0e15;border-radius:4px}}
-.dm-l{{font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px}}
+.dm-l{{font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:.5px;cursor:help}}
 .dm-v{{font-size:11px;color:#cbd5e1;margin-top:1px}}
 .tabs{{display:flex;border-bottom:1px solid #1e2531}}
 .tab{{flex:1;padding:10px;text-align:center;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#475569;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}}
@@ -613,7 +647,7 @@ function rTl(idxs){{
     var div=document.createElement('div');
     div.className='ti';
     div.id='t'+i;
-    div.innerHTML='<div class="tr"><span class="td">#'+(i+1)+' \\u00b7 '+ds+'</span><span class="tpnl '+cls+'">'+sign+t.pnl.toFixed(1)+'%</span></div><div class="tp"><div><span style="color:#22c55e">\\u25b2 '+t.ep.toFixed(0)+'</span> <span style="color:#475569">\\u2192</span> <span style="color:#ef4444">\\u25bc '+t.xp.toFixed(0)+'</span></div><span class="tamt '+cls+'">'+asign+t.amt.toFixed(2)+' '+qCur+'</span></div><div class="tdd"><div class="dm"><div class="dm-l">Duration</div><div class="dm-v">'+fmtT(t.dur)+' <span style="color:#475569">('+t.dur+'b)</span></div></div><div class="dm"><div class="dm-l">Volatility</div><div class="dm-v">'+t.vol.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">MAE</div><div class="dm-v" style="color:#ef4444">'+t.mae.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">MFE</div><div class="dm-v" style="color:#22c55e">'+t.mfe.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">Efficiency</div><div class="dm-v">'+t.eff.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">R:R Ratio</div><div class="dm-v">'+t.rr.toFixed(2)+'</div></div><div class="dm"><div class="dm-l">Drawdown</div><div class="dm-v" style="color:#ef4444">'+t.dd.toFixed(2)+'%</div></div><div class="dm"><div class="dm-l">Risk</div><div class="dm-v">'+t.risk.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l">Time Loss</div><div class="dm-v" style="color:#ef4444">'+fmtT(t.bil)+'</div></div><div class="dm"><div class="dm-l">Time Profit</div><div class="dm-v" style="color:#22c55e">'+fmtT(t.bip)+'</div></div><div class="dm"><div class="dm-l">Fees</div><div class="dm-v">'+t.fees.toFixed(2)+' '+qCur+'</div></div><div class="dm"><div class="dm-l">Slippage</div><div class="dm-v">'+t.slip.toFixed(2)+' '+qCur+'</div></div></div>';
+    div.innerHTML='<div class="tr"><span class="td">#'+(i+1)+' \\u00b7 '+ds+'</span><span class="tpnl '+cls+'">'+sign+t.pnl.toFixed(1)+'%</span></div><div class="tp"><div><span style="color:#22c55e">\\u25b2 '+t.ep.toFixed(0)+'</span> <span style="color:#475569">\\u2192</span> <span style="color:#ef4444">\\u25bc '+t.xp.toFixed(0)+'</span></div><span class="tamt '+cls+'">'+asign+t.amt.toFixed(2)+' '+qCur+'</span></div><div class="tdd"><div class="dm"><div class="dm-l" title="Tiempo total del trade desde entrada hasta salida">Duration</div><div class="dm-v">'+fmtT(t.dur)+' <span style="color:#475569">('+t.dur+'b)</span></div></div><div class="dm"><div class="dm-l" title="Desviaci\\u00f3n est\\u00e1ndar del precio durante el trade">Volatility</div><div class="dm-v">'+t.vol.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l" title="M\\u00e1xima excursi\\u00f3n adversa: peor precio alcanzado contra tu posici\\u00f3n">MAE</div><div class="dm-v" style="color:#ef4444">'+t.mae.toFixed(2)+'</div></div><div class="dm"><div class="dm-l" title="M\\u00e1xima excursi\\u00f3n favorable: mejor precio alcanzado a tu favor">MFE</div><div class="dm-v" style="color:#22c55e">'+t.mfe.toFixed(2)+'</div></div><div class="dm"><div class="dm-l" title="Porcentaje del MFE capturado como beneficio real (PnL/MFE)">Efficiency</div><div class="dm-v">'+t.eff.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l" title="Ratio riesgo/recompensa: MFE dividido por MAE">R:R Ratio</div><div class="dm-v">'+t.rr.toFixed(2)+'</div></div><div class="dm"><div class="dm-l" title="M\\u00e1xima ca\\u00edda desde el mejor punto del trade">Drawdown</div><div class="dm-v" style="color:#ef4444">'+t.dd.toFixed(2)+'%</div></div><div class="dm"><div class="dm-l" title="Porcentaje del capital arriesgado en este trade">Risk</div><div class="dm-v">'+t.risk.toFixed(1)+'%</div></div><div class="dm"><div class="dm-l" title="Tiempo que el trade estuvo en p\\u00e9rdida">Time Loss</div><div class="dm-v" style="color:#ef4444">'+fmtT(t.bil)+'</div></div><div class="dm"><div class="dm-l" title="Tiempo que el trade estuvo en beneficio">Time Profit</div><div class="dm-v" style="color:#22c55e">'+fmtT(t.bip)+'</div></div><div class="dm"><div class="dm-l" title="Comisiones totales pagadas (entrada + salida)">Fees</div><div class="dm-v">'+t.fees.toFixed(2)+' '+qCur+'</div></div><div class="dm"><div class="dm-l" title="Coste de deslizamiento entre precio esperado y ejecutado">Slippage</div><div class="dm-v">'+t.slip.toFixed(2)+' '+qCur+'</div></div></div>';
     div.onclick=function(){{goToTrade(i);}};
     tl.appendChild(div);
   }});
