@@ -9,6 +9,8 @@ import pandas as pd
 from core.simple_backtest_engine import BacktestEngine
 from metrics.metrics_aggregator import MetricsAggregator
 from config.market_configs.crypto_config import get_crypto_config
+from config.market_configs.futures_config import get_futures_config
+from models.enums import MarketType
 
 
 class BacktestRunner:
@@ -64,10 +66,16 @@ class BacktestRunner:
             print(f"  - Trades esperados: ~{len(signals)//2}")
         
         # 2. Configurar motor
-        market_config = get_crypto_config(
-            exchange=self.strategy.exchange,
-            symbol=self.strategy.symbol
-        )
+        if self.strategy.market == MarketType.FUTURES:
+            market_config = get_futures_config(
+                exchange=self.strategy.exchange,
+                symbol=self.strategy.symbol
+            )
+        else:
+            market_config = get_crypto_config(
+                exchange=self.strategy.exchange,
+                symbol=self.strategy.symbol
+            )
         self.market_config = market_config
 
         self.engine = BacktestEngine(

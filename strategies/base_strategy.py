@@ -9,6 +9,7 @@ import pandas as pd
 from models.enums import SignalType, OrderType, CurrencyType, ExchangeName, MarketType, SignalPositionSide
 from models.simple_signals import TradingSignal
 from config.markets.crypto_market import CryptoMarketDefinition
+from config.markets.futures_market import FuturesMarketDefinition
 from utils.timeframe import Timeframe
 
 class BaseStrategy(ABC):
@@ -47,8 +48,13 @@ class BaseStrategy(ABC):
             )
             self.slippage_value = self.market_definition.get_config()["slippage"]
         else:
-            self.market_definition = None
-            self.slippage_value = 1
+            self.market_definition = FuturesMarketDefinition(
+                market=market.value,
+                symbol=symbol,
+                exchange=exchange
+            )
+            config = self.market_definition.get_config()
+            self.slippage_value = config["slippage_ticks"] * config["tick_size"]
 
         # ✅ NUEVA LÓGICA: Soportar datos inyectados O cargar del disco
         if data is not None:

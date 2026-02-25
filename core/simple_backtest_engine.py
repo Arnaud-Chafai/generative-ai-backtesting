@@ -121,8 +121,15 @@ class BacktestEngine:
         
         # Extraer configuración del mercado
         self.fee_rate = market_config['exchange_fee']
-        self.slippage_pct = market_config['slippage']
         self.tick_size = market_config['tick_size']
+
+        # Slippage: fijo en ticks (futuros) o porcentual (crypto)
+        if 'slippage_ticks' in market_config:
+            self.slippage_fixed = market_config['slippage_ticks'] * self.tick_size
+            self.slippage_pct = 0.0
+        else:
+            self.slippage_fixed = 0.0
+            self.slippage_pct = market_config['slippage']
         
         # Estado del motor
         self.current_position: Position | None = None
@@ -267,11 +274,14 @@ class BacktestEngine:
         Returns:
             Precio real después de slippage, redondeado al tick_size
         """
-        if is_buy:
-            # Al comprar, pagamos más caro
+        if self.slippage_fixed > 0:
+            # Futuros: slippage fijo en ticks
+            real_price = price + self.slippage_fixed if is_buy else price - self.slippage_fixed
+        elif is_buy:
+            # Crypto: slippage porcentual, compramos más caro
             real_price = price * (1 + self.slippage_pct)
         else:
-            # Al vender, recibimos menos
+            # Crypto: slippage porcentual, vendemos más barato
             real_price = price * (1 - self.slippage_pct)
         
         # Redondear al tick_size del mercado

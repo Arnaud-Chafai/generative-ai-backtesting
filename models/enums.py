@@ -52,6 +52,7 @@ class ExchangeName(str, Enum):
     """Nombres de los exchanges soportados."""
     BINANCE = "Binance"
     KUCOIN = "Kucoin"
+    CME = "CME"
 
 
 class SignalStatus(str, Enum):
