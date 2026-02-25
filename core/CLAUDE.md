@@ -44,7 +44,7 @@ runner.plot_dashboards()
 
 **Flujo de `run()`:**
 1. `strategy.generate_simple_signals()` → lista de TradingSignal
-2. `get_crypto_config()` → configuracion de mercado
+2. `get_crypto_config()` o `get_futures_config()` segun `strategy.market`
 3. `BacktestEngine.run(signals)` → DataFrame de trades
 4. `MetricsAggregator(results, strategy)` → metricas completas
 
@@ -65,11 +65,15 @@ runner.plot_dashboards()
 BacktestRunner
 ├── BacktestEngine (core)
 ├── MetricsAggregator (metrics)
-├── get_crypto_config (config)
+├── get_crypto_config / get_futures_config (config) — dispatch por market type
 ├── BacktestVisualizer (visualization) — lazy import
 └── create_dashboard (visualization) — lazy import
 ```
 
-## Nota importante
+## Multi-mercado
 
-El runner actualmente solo soporta crypto (`get_crypto_config`). Para futuros u otros mercados habria que parametrizar la funcion de config.
+El runner despacha la config segun `strategy.market`:
+- `MarketType.CRYPTO` → `get_crypto_config()` (fees ratio, slippage porcentual)
+- `MarketType.FUTURES` → `get_futures_config()` (fees fijos USD, slippage en ticks)
+
+El engine detecta automaticamente si usar costos fijos o porcentuales via las keys `slippage_ticks` y `fee_fixed` en el config dict.

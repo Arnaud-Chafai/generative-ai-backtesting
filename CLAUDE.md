@@ -70,6 +70,33 @@ optimizer = ParameterOptimizer(strategy_class=BreakoutSimple, market_data=df, sy
 results = optimizer.optimize(param_ranges={...}, metric='sharpe_ratio')
 ```
 
+## Mercados soportados
+
+El framework es **multi-mercado**. El engine detecta automaticamente el tipo de costos:
+
+| Mercado | Slippage | Fees | Config |
+|---------|----------|------|--------|
+| **Crypto** | Porcentual (`price * pct`) | Ratio del volumen | `get_crypto_config()` |
+| **Futuros CME** | Fijo en ticks (`price ± ticks * tick_size`) | Fijo USD por contrato | `get_futures_config()` |
+
+**Activos de futuros configurados:** ES (S&P 500), NQ (Nasdaq-100), GC (Gold/COMEX), CL (Crude Oil/NYMEX)
+
+Ejemplo de estrategia de futuros:
+```python
+class MiEstrategiaFuturos(BaseStrategy):
+    def __init__(self, **kwargs):
+        super().__init__(
+            market=MarketType.FUTURES,
+            symbol='CL',
+            strategy_name="Mi_Estrategia",
+            timeframe=Timeframe.D1,
+            exchange='CME',
+            **kwargs
+        )
+```
+
+`BacktestRunner` despacha la config correcta segun `strategy.market`.
+
 ## Fases completadas
 
 | Fase | Descripcion | Estado |
@@ -77,6 +104,7 @@ results = optimizer.optimize(param_ranges={...}, metric='sharpe_ratio')
 | 1-2 | Motor de backtest + metricas | ✅ |
 | 3 | Visualizacion (10 dashboards + charts) | ✅ |
 | 4a | Grid Search optimizer + viz 3D | ✅ |
+| - | Soporte multi-mercado (Crypto + Futuros CME) | ✅ |
 
 ## Roadmap
 
@@ -98,7 +126,5 @@ results = optimizer.optimize(param_ranges={...}, metric='sharpe_ratio')
 ## Notas tecnicas
 
 - Solo soporta posiciones LONG actualmente
-- `BacktestRunner` hardcodea `get_crypto_config()` (solo crypto)
-- `futures_config.py` existe pero no tiene consumidor activo
 - `Timeframe` enum vive en `utils/` (conceptualmente es un enum de dominio)
 - `set_style()` esta duplicada en 3 archivos de dashboards
