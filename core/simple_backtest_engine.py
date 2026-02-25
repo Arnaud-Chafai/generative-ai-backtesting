@@ -120,16 +120,20 @@ class BacktestEngine:
         self.capital = initial_capital  # Capital disponible actual
         
         # Extraer configuración del mercado
-        self.fee_rate = market_config['exchange_fee']
         self.tick_size = market_config['tick_size']
 
-        # Slippage: fijo en ticks (futuros) o porcentual (crypto)
+        # Futuros: slippage fijo en ticks, fee fijo en USD por contrato
+        # Crypto: slippage porcentual, fee como ratio del volumen
         if 'slippage_ticks' in market_config:
             self.slippage_fixed = market_config['slippage_ticks'] * self.tick_size
             self.slippage_pct = 0.0
+            self.fee_fixed = market_config['exchange_fee']
+            self.fee_rate = 0.0
         else:
             self.slippage_fixed = 0.0
             self.slippage_pct = market_config['slippage']
+            self.fee_fixed = 0.0
+            self.fee_rate = market_config['exchange_fee']
         
         # Estado del motor
         self.current_position: Position | None = None
@@ -173,7 +177,7 @@ class BacktestEngine:
         real_price = self._apply_slippage_to_price(signal.price, is_buy=True)
         
         # Paso 3: Calcular fees de esta entrada
-        entry_fee = entry_size_usdt * self.fee_rate
+        entry_fee = self.fee_fixed if self.fee_fixed > 0 else entry_size_usdt * self.fee_rate
         
         # Paso 3.5: Calcular costo de slippage de entrada
         # Slippage cost = diferencia entre precio ideal y precio real * cantidad de crypto
@@ -217,7 +221,7 @@ class BacktestEngine:
         exit_value_usdt = total_crypto * real_price
         
         # Paso 4: Calcular fee de salida
-        exit_fee = exit_value_usdt * self.fee_rate
+        exit_fee = self.fee_fixed if self.fee_fixed > 0 else exit_value_usdt * self.fee_rate
         
         # Paso 4.5: Calcular costo de slippage de salida
         exit_slippage_cost = abs(signal.price - real_price) * total_crypto
