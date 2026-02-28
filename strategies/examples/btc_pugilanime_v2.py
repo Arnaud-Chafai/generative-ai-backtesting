@@ -7,6 +7,7 @@ pullbacks a EMAs que ofrecen entradas de alta expectativa.
 
 v2: SMA 200 trend filter + EMA 30 pullback + ATR stop/trailing + DCA temporal (3 entradas).
 v2.1: Salida parcial 33% en 1R + break-even + trailing ATR + TP máximo 3R.
+v2.2: Position size 80%, trailing ATR x2.5, TP 6R, parcial en 1.5R. Robustness test passed.
 """
 
 from strategies.base_strategy import BaseStrategy
@@ -45,8 +46,8 @@ class BTCPugilanimeV2(BaseStrategy):
         # ATR stop/trailing:
         atr_period: int = 14,
         atr_stop_mult: float = 2.5,
-        atr_trail_mult: float = 1.5,
-        trail_activation_r: float = 1.0,
+        atr_trail_mult: float = 2.5,
+        trail_activation_r: float = 1.5,
         # Breakout:
         volume_multiplier: float = 2.0,
         breakout_confirm_bars: int = 2,
@@ -56,9 +57,9 @@ class BTCPugilanimeV2(BaseStrategy):
         dca_interval_bars: int = 3,
         # Salida parcial:
         partial_close_pct: float = 0.33,
-        max_tp_r: float = 3.0,
+        max_tp_r: float = 6.0,
         # Sizing:
-        position_size_pct: float = 0.5,
+        position_size_pct: float = 0.8,
         **kwargs
     ):
         super().__init__(
