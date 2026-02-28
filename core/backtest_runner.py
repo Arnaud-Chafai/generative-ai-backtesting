@@ -185,6 +185,7 @@ class BacktestRunner:
 
     def plot_dashboards(
         self,
+        interactive: bool = True,
         modules: list = None,
         output_folder: str = "dashboards",
         show: bool = True
@@ -193,6 +194,8 @@ class BacktestRunner:
         Genera dashboards de análisis.
 
         Args:
+            interactive: True (default) genera un HTML interactivo con Plotly.
+                         False genera PNGs estáticos con matplotlib/seaborn.
             modules: Lista de módulos a incluir. Disponibles:
                 - performance, time_chart, temporal, metrics_distribution,
                 - metrics_boxplot, mae_scatter, mfe_scatter, risk_reward_scatter,
@@ -202,17 +205,29 @@ class BacktestRunner:
             show: Si True, muestra los gráficos
 
         Returns:
-            dict: Diccionario con las figuras generadas
+            interactive=True: str con la ruta al HTML generado
+            interactive=False: dict con las figuras matplotlib generadas
         """
         if self.metrics is None:
             raise ValueError("⚠️ Primero ejecuta run()")
 
-        from visualization.dashboard_manager import create_dashboard
+        if interactive:
+            from visualization.plotly_dashboard_manager import create_interactive_dashboard
 
-        return create_dashboard(
-            strategy=self.strategy,
-            df_trade_metrics=self.metrics.trade_metrics_df,
-            modules=modules,
-            output_folder=output_folder,
-            show=show
-        )
+            return create_interactive_dashboard(
+                strategy=self.strategy,
+                df_trade_metrics=self.metrics.trade_metrics_df,
+                modules=modules,
+                output_folder=output_folder,
+                show=show
+            )
+        else:
+            from visualization.dashboard_manager import create_dashboard
+
+            return create_dashboard(
+                strategy=self.strategy,
+                df_trade_metrics=self.metrics.trade_metrics_df,
+                modules=modules,
+                output_folder=output_folder,
+                show=show
+            )
