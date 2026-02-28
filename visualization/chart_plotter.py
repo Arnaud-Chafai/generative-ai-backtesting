@@ -339,6 +339,16 @@ class BacktestVisualizerInteractive:
         t_end = self._filtered_market.index.max()
         return [s for s in buy_signals if t_start <= pd.to_datetime(s.timestamp) <= t_end]
 
+    def _serialize_individual_buy_markers(self) -> str:
+        """Señales BUY individuales → JSON para HTML markers (DCA/multi-entry)."""
+        buy_signals = self._get_individual_buy_signals()
+        if not buy_signals:
+            return '[]'
+        return json.dumps([
+            {'t': int(pd.to_datetime(s.timestamp).value // 10**9), 'p': float(s.price)}
+            for s in buy_signals
+        ])
+
     def _serialize_indicator_data(self, indicators) -> list:
         """Columnas de indicadores → lista de (nombre, color, json_data)."""
         if not indicators:
@@ -497,6 +507,7 @@ class BacktestVisualizerInteractive:
         volume_json = self._serialize_volume_data()
         trades_json = self._serialize_trades_for_panel()
         indicator_lines = self._serialize_indicator_data(indicators)
+        buy_markers_json = self._serialize_individual_buy_markers()
 
         total_bars = len(self._filtered_market)
         symbol = self.strategy.symbol
@@ -741,14 +752,21 @@ new ResizeObserver(function(){{chart.resize(chartArea.clientWidth,chartArea.clie
 
 // Custom HTML markers: crear una vez, reposicionar en cada cambio de vista
 var mkEls=[];
-tData.forEach(function(t){{
-  [{{t:t.et,p:t.ep,b:1}},{{t:t.xt,p:t.xp,b:0}}].forEach(function(m){{
-    var d=document.createElement('div');
-    d.className='cm '+(m.b?'cm-b':'cm-s');
-    d.style.display='none';
-    chartArea.appendChild(d);
-    mkEls.push({{el:d,t:m.t,p:m.p,b:m.b}});
+var buyMks={buy_markers_json};
+if(buyMks.length>0){{
+  buyMks.forEach(function(m){{
+    var d=document.createElement('div');d.className='cm cm-b';d.style.display='none';
+    chartArea.appendChild(d);mkEls.push({{el:d,t:m.t,p:m.p,b:1}});
   }});
+}}else{{
+  tData.forEach(function(t){{
+    var d=document.createElement('div');d.className='cm cm-b';d.style.display='none';
+    chartArea.appendChild(d);mkEls.push({{el:d,t:t.et,p:t.ep,b:1}});
+  }});
+}}
+tData.forEach(function(t){{
+  var d=document.createElement('div');d.className='cm cm-s';d.style.display='none';
+  chartArea.appendChild(d);mkEls.push({{el:d,t:t.xt,p:t.xp,b:0}});
 }});
 function uMk(){{
   mkEls.forEach(function(m){{
