@@ -6,6 +6,7 @@ Edge: Sesgo alcista estructural de BTC. Correcciones en tendencia alcista genera
 pullbacks a EMAs que ofrecen entradas de alta expectativa.
 
 v2: SMA 200 trend filter + EMA 30 pullback + ATR stop/trailing + DCA temporal (3 entradas).
+v2.1: Salida parcial 33% en 1R + break-even + trailing ATR + TP máximo 3R.
 """
 
 from strategies.base_strategy import BaseStrategy
@@ -53,6 +54,9 @@ class BTCPugilanimeV2(BaseStrategy):
         # DCA:
         dca_entries: int = 3,
         dca_interval_bars: int = 3,
+        # Salida parcial:
+        partial_close_pct: float = 0.33,
+        max_tp_r: float = 3.0,
         # Sizing:
         position_size_pct: float = 0.5,
         **kwargs
@@ -78,6 +82,8 @@ class BTCPugilanimeV2(BaseStrategy):
         self.breakout_timeout = int(breakout_timeout)
         self.dca_entries = int(dca_entries)
         self.dca_interval_bars = int(dca_interval_bars)
+        self.partial_close_pct = float(partial_close_pct)
+        self.max_tp_r = float(max_tp_r)
         self.position_size_pct = float(position_size_pct)
 
         # Tamaño por entrada DCA
@@ -112,6 +118,7 @@ class BTCPugilanimeV2(BaseStrategy):
         print(f"   Tendencia: SMA {self.sma_trend_period} | Pullback: EMA {self.ema_period}")
         print(f"   Stop: ATR({self.atr_period}) x {self.atr_stop_mult} | Trail: ATR x {self.atr_trail_mult} tras {self.trail_activation_r}R")
         print(f"   DCA: {self.dca_entries} entradas cada {self.dca_interval_bars} velas ({self.dca_interval_bars * 5}min)")
+        print(f"   Parcial: {self.partial_close_pct:.0%} en {self.trail_activation_r}R, TP max {self.max_tp_r}R, BE post-parcial")
         print(f"   Breakout: {self.breakout_confirm_bars} velas confirm, vol {self.volume_multiplier}x")
 
     def generate_simple_signals(self) -> list:
@@ -135,6 +142,7 @@ class BTCPugilanimeV2(BaseStrategy):
         entry_risk = None             # Riesgo = entry - stop (para calcular trailing activation)
         trailing_stop = None
         trailing_active = False
+        partial_done = False          # ¿Ya se hizo el cierre parcial?
         highest_high_since_entry = None
         bars_above_range = 0          # Conteo de cierres consecutivos sobre range_high
         volume_confirmed = False       # Volumen confirmado en primera vela del breakout
@@ -281,6 +289,7 @@ class BTCPugilanimeV2(BaseStrategy):
                     entry_risk = None
                     trailing_stop = None
                     trailing_active = False
+                    partial_done = False
                     highest_high_since_entry = None
                     dca_entries_done = 0
                     seen_above_ema = False
@@ -303,40 +312,77 @@ class BTCPugilanimeV2(BaseStrategy):
             # ----------------------------------------------------------------
             elif state == "IN_POSITION":
                 highest_high_since_entry = max(highest_high_since_entry, high)
+                profit = close - entry_price_first
 
-                # Check trailing activation
-                if not trailing_active:
-                    profit = close - entry_price_first
+                # --- Fase 1: Pre-parcial (stop fijo, esperando 1R) ---
+                if not partial_done:
+                    if close <= stop_loss:
+                        # Stop loss: cerrar 100%
+                        self.create_simple_signal(
+                            signal_type=SignalType.SELL,
+                            timestamp=timestamps[i],
+                            price=close,
+                            position_size_pct=1.0
+                        )
+                        state = "WAITING_RESET"
+                        stop_loss = None
+                        entry_price_first = None
+                        entry_risk = None
+                        trailing_stop = None
+                        trailing_active = False
+                        partial_done = False
+                        highest_high_since_entry = None
+                        dca_entries_done = 0
+                        seen_above_ema = False
+                        continue
+
                     if profit >= entry_risk * self.trail_activation_r:
+                        # 1R alcanzado: cerrar parcial + activar trailing + BE
+                        self.create_simple_signal(
+                            signal_type=SignalType.SELL,
+                            timestamp=timestamps[i],
+                            price=close,
+                            position_size_pct=self.partial_close_pct
+                        )
+                        partial_done = True
+                        # Stop sube a break-even (avg entry price)
+                        stop_loss = entry_price_first
+                        # Activar trailing
                         trailing_active = True
                         trailing_stop = highest_high_since_entry - atr * self.atr_trail_mult
+                        if trailing_stop < stop_loss:
+                            trailing_stop = stop_loss
 
-                # Update trailing stop (solo sube)
-                if trailing_active:
-                    new_trail = highest_high_since_entry - atr * self.atr_trail_mult
-                    if new_trail > trailing_stop:
-                        trailing_stop = new_trail
+                # --- Fase 2: Post-parcial (trailing + BE + TP máximo) ---
+                else:
+                    # Actualizar trailing (solo sube)
+                    if trailing_active:
+                        new_trail = highest_high_since_entry - atr * self.atr_trail_mult
+                        if new_trail > trailing_stop:
+                            trailing_stop = new_trail
 
-                # Exit conditions
-                hit_stop = close <= stop_loss
-                hit_trail = trailing_active and close <= trailing_stop
+                    # Exit conditions para el runner (67% restante)
+                    hit_be = close <= stop_loss  # break-even
+                    hit_trail = trailing_active and close <= trailing_stop
+                    hit_tp = profit >= entry_risk * self.max_tp_r
 
-                if hit_stop or hit_trail:
-                    self.create_simple_signal(
-                        signal_type=SignalType.SELL,
-                        timestamp=timestamps[i],
-                        price=close,
-                        position_size_pct=1.0
-                    )
-                    state = "WAITING_RESET"
-                    stop_loss = None
-                    entry_price_first = None
-                    entry_risk = None
-                    trailing_stop = None
-                    trailing_active = False
-                    highest_high_since_entry = None
-                    dca_entries_done = 0
-                    seen_above_ema = False
+                    if hit_be or hit_trail or hit_tp:
+                        self.create_simple_signal(
+                            signal_type=SignalType.SELL,
+                            timestamp=timestamps[i],
+                            price=close,
+                            position_size_pct=1.0
+                        )
+                        state = "WAITING_RESET"
+                        stop_loss = None
+                        entry_price_first = None
+                        entry_risk = None
+                        trailing_stop = None
+                        trailing_active = False
+                        partial_done = False
+                        highest_high_since_entry = None
+                        dca_entries_done = 0
+                        seen_above_ema = False
 
             # ----------------------------------------------------------------
             elif state == "WAITING_RESET":

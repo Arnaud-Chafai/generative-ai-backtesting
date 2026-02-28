@@ -17,6 +17,7 @@ Contiene 3 clases que forman el motor:
 - `add_entry()`: agrega una compra mas
 - `total_cost()`, `total_crypto()`, `average_entry_price()`: calculos agregados
 - `total_fees_on_entries()`, `total_slippage_on_entries()`: costos acumulados
+- `partial_close(pct)`: cierra una fraccion de la posicion proporcionalmente. Reduce cada Entry in-place y retorna metricas de la porcion cerrada. El avg_entry_price no cambia.
 
 **`BacktestEngine`** — Motor principal. Procesa señales BUY/SELL en orden cronologico.
 
@@ -26,7 +27,9 @@ df_results = engine.run(signals)  # lista de TradingSignal
 ```
 
 - `_handle_buy()`: abre posicion nueva o agrega entrada (promediado)
-- `_handle_sell()`: cierra posicion completa, calcula P&L
+- `_handle_sell()`: cierra posicion total o parcial, calcula P&L
+  - `position_size_pct < 1.0`: cierre parcial via `Position.partial_close()`, posicion sigue abierta
+  - `position_size_pct >= 1.0`: cierre total (comportamiento original)
 - `_apply_slippage_to_price()`: simula deslizamiento, redondea a tick_size
 - Retorna DataFrame con columnas: symbol, entry/exit_time, avg_entry_price, exit_price, total_cost, exit_value, fees, slippage, gross_pnl, net_pnl, capital_after, pnl_pct
 

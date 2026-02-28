@@ -87,7 +87,7 @@ class Position:
     def average_entry_price(self) -> float:
         """
         Precio promedio ponderado de todas las entradas.
-        
+
         Esto es útil para análisis: te dice a qué precio "efectivo"
         compraste considerando todas tus entradas.
         """
@@ -95,6 +95,47 @@ class Position:
         if total_crypto == 0:
             return 0.0
         return self.total_cost() / total_crypto
+
+    def partial_close(self, pct: float) -> dict:
+        """
+        Cierra una fracción de la posición proporcionalmente en todas las entradas.
+
+        Reduce cada Entry in-place y retorna las métricas agregadas de la
+        porción cerrada. El average_entry_price no cambia (reducción proporcional).
+
+        Args:
+            pct: Fracción a cerrar (0.33 = 33%)
+
+        Returns:
+            dict con total_cost, total_crypto, total_entry_fees, total_entry_slippage
+        """
+        closed_cost = 0.0
+        closed_crypto = 0.0
+        closed_fees = 0.0
+        closed_slippage = 0.0
+
+        for entry in self.entries:
+            size_closed = entry.size_usdt * pct
+            crypto_closed = size_closed / entry.price
+            fee_closed = entry.fee * pct
+            slip_closed = entry.slippage_cost * pct
+
+            closed_cost += size_closed
+            closed_crypto += crypto_closed
+            closed_fees += fee_closed
+            closed_slippage += slip_closed
+
+            # Reducir la entrada restante
+            entry.size_usdt -= size_closed
+            entry.fee -= fee_closed
+            entry.slippage_cost -= slip_closed
+
+        return {
+            'total_cost': closed_cost,
+            'total_crypto': closed_crypto,
+            'total_entry_fees': closed_fees,
+            'total_entry_slippage': closed_slippage,
+        }
 
 
 class BacktestEngine:
@@ -204,64 +245,74 @@ class BacktestEngine:
     
     def _handle_sell(self, signal: TradingSignal):
         """
-        Procesa una señal de venta.
-        
-        Cierra completamente la posición actual si existe.
+        Procesa una señal de venta (total o parcial).
+
+        Si position_size_pct < 1.0: cierre parcial — cierra esa fracción
+        de la posición y mantiene el resto abierto.
+        Si position_size_pct >= 1.0: cierre total — cierra toda la posición.
         """
         if self.current_position is None:
-            return  # No hay posición que cerrar
-        
-        # Paso 1: Aplicar slippage (vendemos más barato de lo esperado)
+            return
+
+        pos = self.current_position
+        pct = signal.position_size_pct
+
+        # Obtener métricas de la porción a cerrar
+        if pct < 1.0:
+            closed = pos.partial_close(pct)
+            closed_crypto = closed['total_crypto']
+            closed_cost = closed['total_cost']
+            closed_entry_fees = closed['total_entry_fees']
+            closed_entry_slippage = closed['total_entry_slippage']
+        else:
+            closed_crypto = pos.total_crypto()
+            closed_cost = pos.total_cost()
+            closed_entry_fees = pos.total_fees_on_entries()
+            closed_entry_slippage = pos.total_slippage_on_entries()
+
+        # Slippage y precio real de salida
         real_price = self._apply_slippage_to_price(signal.price, is_buy=False)
-        
-        # Paso 2: Calcular cuánto crypto tenemos en total
-        total_crypto = self.current_position.total_crypto()
-        
-        # Paso 3: Calcular el valor de venta en USDT
-        exit_value_usdt = total_crypto * real_price
-        
-        # Paso 4: Calcular fee de salida
-        exit_fee = self.fee_fixed if self.fee_fixed > 0 else exit_value_usdt * self.fee_rate
-        
-        # Paso 4.5: Calcular costo de slippage de salida
-        exit_slippage_cost = abs(signal.price - real_price) * total_crypto
-        
-        # Paso 5: Calcular P&L
-        total_cost = self.current_position.total_cost()
-        total_entry_fees = self.current_position.total_fees_on_entries()
-        total_entry_slippage = self.current_position.total_slippage_on_entries()
-        
-        gross_pnl = exit_value_usdt - total_cost
+
+        # Valor de salida y fee
+        exit_value = closed_crypto * real_price
+        exit_fee = self.fee_fixed if self.fee_fixed > 0 else exit_value * self.fee_rate
+        exit_slippage_cost = abs(signal.price - real_price) * closed_crypto
+
+        # P&L
+        gross_pnl = exit_value - closed_cost
         net_pnl = gross_pnl - exit_fee
-        
-        # Paso 6: Actualizar capital
-        # Recuperamos el valor neto de venta (ya descontada la exit_fee)
-        self.capital += (exit_value_usdt - exit_fee)
-        
-        # Paso 7: Guardar trade completado
+
+        # Capital
+        self.capital += (exit_value - exit_fee)
+
+        # Avg entry price (igual para parcial y total, la reducción es proporcional)
+        avg_entry = closed_cost / closed_crypto if closed_crypto > 0 else 0.0
+
+        # Registrar trade
         self.completed_trades.append({
-            'symbol': self.current_position.symbol,
-            'entry_time': self.current_position.entry_time,
+            'symbol': pos.symbol,
+            'entry_time': pos.entry_time,
             'exit_time': signal.timestamp,
-            'num_entries': len(self.current_position.entries),
-            'avg_entry_price': self.current_position.average_entry_price(),
+            'num_entries': len(pos.entries),
+            'avg_entry_price': avg_entry,
             'exit_price': real_price,
-            'total_cost': total_cost,
-            'exit_value': exit_value_usdt,
-            'total_entry_fees': total_entry_fees,
+            'total_cost': closed_cost,
+            'exit_value': exit_value,
+            'total_entry_fees': closed_entry_fees,
             'exit_fee': exit_fee,
-            'total_fees': total_entry_fees + exit_fee,
-            'entry_slippage': total_entry_slippage,
+            'total_fees': closed_entry_fees + exit_fee,
+            'entry_slippage': closed_entry_slippage,
             'exit_slippage': exit_slippage_cost,
-            'total_slippage': total_entry_slippage + exit_slippage_cost,
+            'total_slippage': closed_entry_slippage + exit_slippage_cost,
             'gross_pnl': gross_pnl,
             'net_pnl': net_pnl,
             'capital_after': self.capital,
-            'pnl_pct': (net_pnl / total_cost * 100) if total_cost > 0 else 0
+            'pnl_pct': (net_pnl / closed_cost * 100) if closed_cost > 0 else 0
         })
-        
-        # Paso 8: Cerrar posición
-        self.current_position = None
+
+        # Cerrar posición solo si fue cierre total
+        if pct >= 1.0:
+            self.current_position = None
     
     def _apply_slippage_to_price(self, price: float, is_buy: bool) -> float:
         """
