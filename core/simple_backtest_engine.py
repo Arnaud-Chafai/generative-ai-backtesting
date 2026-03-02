@@ -221,7 +221,16 @@ class BacktestEngine:
             self.slippage_pct = market_config['slippage']
             self.fee_fixed = 0.0
             self.fee_rate = market_config['exchange_fee']
-        
+
+        # Detectar tipo de mercado y campos de futuros
+        self.is_futures = 'slippage_ticks' in market_config
+        if self.is_futures:
+            self.point_value = market_config['tick_value'] / market_config['tick_size']
+            self.contract_size = market_config['contract_size']
+        else:
+            self.point_value = 0.0
+            self.contract_size = 0
+
         # Estado del motor
         self.current_position: Position | None = None
         self.completed_trades: list[dict] = []
@@ -249,114 +258,203 @@ class BacktestEngine:
     
     def _handle_buy(self, signal: TradingSignal):
         """
-        Procesa una señal de compra.
-        
-        Si no hay posición abierta, crea una nueva.
-        Si ya hay posición abierta, añade otra entrada (promediado).
+        Procesa una senal de compra.
+
+        Crypto: calcula size en USDT, compra crypto.
+        Futuros: calcula contratos por riesgo o usa override, solo paga fee.
         """
-        # Paso 1: Calcular tamaño de esta entrada en USDT
-        entry_size_usdt = self.capital * signal.position_size_pct
-        
-        if entry_size_usdt <= 0:
-            return  # No hay capital disponible, no podemos comprar
-        
-        # Paso 2: Aplicar slippage (compramos más caro de lo esperado)
         real_price = self._apply_slippage_to_price(signal.price, is_buy=True)
-        
-        # Paso 3: Calcular fees de esta entrada
-        entry_fee = self.fee_fixed if self.fee_fixed > 0 else entry_size_usdt * self.fee_rate
-        
-        # Paso 3.5: Calcular costo de slippage de entrada
-        # Slippage cost = diferencia entre precio ideal y precio real * cantidad de crypto
-        entry_slippage_cost = abs(real_price - signal.price) * (entry_size_usdt / real_price)
-        
-        # Paso 4: Si no hay posición abierta, crear nueva
-        if self.current_position is None:
-            self.current_position = Position(
-                symbol=signal.symbol,
-                entry_time=signal.timestamp
+        slippage_per_unit = abs(real_price - signal.price)
+
+        if self.is_futures:
+            # --- FUTUROS ---
+            if signal.contracts is not None:
+                num_contracts = signal.contracts
+            else:
+                if signal.stop_loss_price is None:
+                    return  # No se puede calcular sizing sin stop
+                risk_usd = self.capital * signal.position_size_pct
+                stop_distance = abs(real_price - signal.stop_loss_price)
+                if stop_distance <= 0:
+                    return
+                num_contracts = int(risk_usd / (stop_distance * self.point_value))
+
+            if num_contracts < 1:
+                return  # Capital insuficiente para 1 contrato
+
+            entry_fee = num_contracts * self.fee_fixed
+            entry_slippage_cost = slippage_per_unit * num_contracts * self.point_value
+
+            # Calcular risk_usd real (para pnl_pct)
+            if signal.stop_loss_price is not None:
+                stop_distance = abs(real_price - signal.stop_loss_price)
+                risk_usd = num_contracts * stop_distance * self.point_value
+            elif signal.contracts is not None:
+                # Override sin stop: risk_usd = capital * pct como estimacion
+                risk_usd = self.capital * signal.position_size_pct
+            else:
+                risk_usd = 0.0
+
+            if self.current_position is None:
+                self.current_position = Position(
+                    symbol=signal.symbol,
+                    entry_time=signal.timestamp
+                )
+                self.current_position._risk_usd = 0.0
+
+            self.current_position._risk_usd += risk_usd
+            self.current_position.add_entry(
+                timestamp=signal.timestamp,
+                price=real_price,
+                size_usdt=0.0,
+                contracts=num_contracts,
+                fee=entry_fee,
+                slippage_cost=entry_slippage_cost
             )
-        
-        # Paso 5: Añadir esta entrada a la posición
-        self.current_position.add_entry(
-            timestamp=signal.timestamp,
-            price=real_price,
-            size_usdt=entry_size_usdt,
-            fee=entry_fee,
-            slippage_cost=entry_slippage_cost
-        )
-        
-        # Paso 6: Restar tanto el capital de la entrada como la fee
-        self.capital -= (entry_size_usdt + entry_fee)
+            self.capital -= entry_fee  # Solo fee, no notional
+
+        else:
+            # --- CRYPTO (sin cambios funcionales) ---
+            entry_size_usdt = self.capital * signal.position_size_pct
+            if entry_size_usdt <= 0:
+                return
+
+            entry_fee = entry_size_usdt * self.fee_rate
+            entry_slippage_cost = slippage_per_unit * (entry_size_usdt / real_price)
+
+            if self.current_position is None:
+                self.current_position = Position(
+                    symbol=signal.symbol,
+                    entry_time=signal.timestamp
+                )
+                self.current_position._risk_usd = 0.0
+
+            self.current_position.add_entry(
+                timestamp=signal.timestamp,
+                price=real_price,
+                size_usdt=entry_size_usdt,
+                contracts=0,
+                fee=entry_fee,
+                slippage_cost=entry_slippage_cost
+            )
+            self.capital -= (entry_size_usdt + entry_fee)
     
     def _handle_sell(self, signal: TradingSignal):
         """
-        Procesa una señal de venta (total o parcial).
+        Procesa una senal de venta (total o parcial).
 
-        Si position_size_pct < 1.0: cierre parcial — cierra esa fracción
-        de la posición y mantiene el resto abierto.
-        Si position_size_pct >= 1.0: cierre total — cierra toda la posición.
+        Crypto: vende crypto, recibe USDT.
+        Futuros: cierra contratos, cobra/paga P&L.
         """
         if self.current_position is None:
             return
 
         pos = self.current_position
         pct = signal.position_size_pct
-
-        # Obtener métricas de la porción a cerrar
-        if pct < 1.0:
-            closed = pos.partial_close(pct)
-            closed_crypto = closed['total_crypto']
-            closed_cost = closed['total_cost']
-            closed_entry_fees = closed['total_entry_fees']
-            closed_entry_slippage = closed['total_entry_slippage']
-        else:
-            closed_crypto = pos.total_crypto()
-            closed_cost = pos.total_cost()
-            closed_entry_fees = pos.total_fees_on_entries()
-            closed_entry_slippage = pos.total_slippage_on_entries()
-
-        # Slippage y precio real de salida
         real_price = self._apply_slippage_to_price(signal.price, is_buy=False)
+        slippage_per_unit = abs(signal.price - real_price)
 
-        # Valor de salida y fee
-        exit_value = closed_crypto * real_price
-        exit_fee = self.fee_fixed if self.fee_fixed > 0 else exit_value * self.fee_rate
-        exit_slippage_cost = abs(signal.price - real_price) * closed_crypto
+        if self.is_futures:
+            # --- FUTUROS ---
+            # Calcular avg_entry ANTES del partial_close (que modifica entries)
+            avg_entry = pos.average_entry_price_futures()
 
-        # P&L
-        gross_pnl = exit_value - closed_cost
-        net_pnl = gross_pnl - exit_fee
+            if pct < 1.0:
+                closed = pos.partial_close_futures(pct)
+                closed_contracts = closed['total_contracts']
+                closed_entry_fees = closed['total_entry_fees']
+                closed_entry_slippage = closed['total_entry_slippage']
+            else:
+                closed_contracts = pos.total_contracts()
+                closed_entry_fees = pos.total_fees_on_entries()
+                closed_entry_slippage = pos.total_slippage_on_entries()
 
-        # Capital
-        self.capital += (exit_value - exit_fee)
+            if closed_contracts == 0:
+                return
 
-        # Avg entry price (igual para parcial y total, la reducción es proporcional)
-        avg_entry = closed_cost / closed_crypto if closed_crypto > 0 else 0.0
+            gross_pnl = closed_contracts * self.point_value * (real_price - avg_entry)
+            exit_fee = closed_contracts * self.fee_fixed
+            exit_slippage_total = slippage_per_unit * closed_contracts * self.point_value
+            net_pnl = gross_pnl - exit_fee
 
-        # Registrar trade
-        self.completed_trades.append({
-            'symbol': pos.symbol,
-            'entry_time': pos.entry_time,
-            'exit_time': signal.timestamp,
-            'num_entries': len(pos.entries),
-            'avg_entry_price': avg_entry,
-            'exit_price': real_price,
-            'total_cost': closed_cost,
-            'exit_value': exit_value,
-            'total_entry_fees': closed_entry_fees,
-            'exit_fee': exit_fee,
-            'total_fees': closed_entry_fees + exit_fee,
-            'entry_slippage': closed_entry_slippage,
-            'exit_slippage': exit_slippage_cost,
-            'total_slippage': closed_entry_slippage + exit_slippage_cost,
-            'gross_pnl': gross_pnl,
-            'net_pnl': net_pnl,
-            'capital_after': self.capital,
-            'pnl_pct': (net_pnl / closed_cost * 100) if closed_cost > 0 else 0
-        })
+            self.capital += net_pnl
 
-        # Cerrar posición solo si fue cierre total
+            risk_usd = getattr(pos, '_risk_usd', 0.0)
+            pnl_pct = (net_pnl / risk_usd * 100) if risk_usd > 0 else 0
+
+            self.completed_trades.append({
+                'symbol': pos.symbol,
+                'entry_time': pos.entry_time,
+                'exit_time': signal.timestamp,
+                'num_entries': len(pos.entries),
+                'avg_entry_price': avg_entry,
+                'exit_price': real_price,
+                'total_cost': 0.0,
+                'exit_value': 0.0,
+                'contracts': closed_contracts,
+                'risk_usd': risk_usd,
+                'point_value': self.point_value,
+                'total_entry_fees': closed_entry_fees,
+                'exit_fee': exit_fee,
+                'total_fees': closed_entry_fees + exit_fee,
+                'entry_slippage': closed_entry_slippage,
+                'exit_slippage': exit_slippage_total,
+                'total_slippage': closed_entry_slippage + exit_slippage_total,
+                'gross_pnl': gross_pnl,
+                'net_pnl': net_pnl,
+                'capital_after': self.capital,
+                'pnl_pct': pnl_pct
+            })
+
+        else:
+            # --- CRYPTO (sin cambios funcionales) ---
+            if pct < 1.0:
+                closed = pos.partial_close(pct)
+                closed_crypto = closed['total_crypto']
+                closed_cost = closed['total_cost']
+                closed_entry_fees = closed['total_entry_fees']
+                closed_entry_slippage = closed['total_entry_slippage']
+            else:
+                closed_crypto = pos.total_crypto()
+                closed_cost = pos.total_cost()
+                closed_entry_fees = pos.total_fees_on_entries()
+                closed_entry_slippage = pos.total_slippage_on_entries()
+
+            exit_value = closed_crypto * real_price
+            exit_fee = exit_value * self.fee_rate
+            exit_slippage_cost = slippage_per_unit * closed_crypto
+
+            gross_pnl = exit_value - closed_cost
+            net_pnl = gross_pnl - exit_fee
+
+            self.capital += (exit_value - exit_fee)
+
+            avg_entry = closed_cost / closed_crypto if closed_crypto > 0 else 0.0
+
+            self.completed_trades.append({
+                'symbol': pos.symbol,
+                'entry_time': pos.entry_time,
+                'exit_time': signal.timestamp,
+                'num_entries': len(pos.entries),
+                'avg_entry_price': avg_entry,
+                'exit_price': real_price,
+                'total_cost': closed_cost,
+                'exit_value': exit_value,
+                'contracts': 0,
+                'risk_usd': 0.0,
+                'point_value': 0.0,
+                'total_entry_fees': closed_entry_fees,
+                'exit_fee': exit_fee,
+                'total_fees': closed_entry_fees + exit_fee,
+                'entry_slippage': closed_entry_slippage,
+                'exit_slippage': exit_slippage_cost,
+                'total_slippage': closed_entry_slippage + exit_slippage_cost,
+                'gross_pnl': gross_pnl,
+                'net_pnl': net_pnl,
+                'capital_after': self.capital,
+                'pnl_pct': (net_pnl / closed_cost * 100) if closed_cost > 0 else 0
+            })
+
         if pct >= 1.0:
             self.current_position = None
     
@@ -400,6 +498,7 @@ class BacktestEngine:
             return pd.DataFrame(columns=[
                 'symbol', 'entry_time', 'exit_time', 'num_entries',
                 'avg_entry_price', 'exit_price', 'total_cost', 'exit_value',
+                'contracts', 'risk_usd', 'point_value',
                 'total_entry_fees', 'exit_fee', 'total_fees',
                 'entry_slippage', 'exit_slippage', 'total_slippage',
                 'gross_pnl', 'net_pnl', 'capital_after', 'pnl_pct'

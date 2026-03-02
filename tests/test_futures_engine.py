@@ -5,6 +5,10 @@ from datetime import datetime
 from models.enums import SignalType
 from models.simple_signals import TradingSignal
 from core.simple_backtest_engine import Entry, Position
+import pandas as pd
+from core.simple_backtest_engine import BacktestEngine
+from config.market_configs.futures_config import get_futures_config
+from config.market_configs.crypto_config import get_crypto_config
 
 
 class TestTradingSignalFutures:
@@ -141,3 +145,241 @@ class TestPositionFutures:
         assert pos.total_cost() == 10000.0
         assert pos.total_crypto() == pytest.approx(0.2)
         assert pos.total_contracts() == 0
+
+
+def make_es_config():
+    """Config de ES (S&P 500 E-mini) para tests."""
+    return get_futures_config("CME", "ES")
+
+
+def make_crypto_config():
+    """Config de BTC/Binance para tests."""
+    return get_crypto_config("Binance", "BTC")
+
+
+class TestBacktestEngineFutures:
+    """Tests del motor de backtest con futuros."""
+
+    def test_engine_detects_futures(self):
+        """El engine detecta is_futures y calcula point_value."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        assert engine.is_futures is True
+        assert engine.point_value == pytest.approx(50.0)
+
+    def test_engine_detects_crypto(self):
+        """El engine sigue detectando crypto correctamente."""
+        engine = BacktestEngine(1000.0, make_crypto_config())
+        assert engine.is_futures is False
+        assert engine.point_value == 0.0
+
+    def test_futures_sizing_contracts_override(self):
+        """Override manual: signal.contracts se usa directamente."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                contracts=3
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="ES",
+                price=5020.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        assert len(results) == 1
+        assert results.iloc[0]['contracts'] == 3
+
+    def test_futures_sizing_by_risk(self):
+        """Sizing por riesgo: contracts = floor(risk_usd / (stop_dist * point_value))."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        # Risk = 1% of 100k = $1000
+        # Stop distance = |5000.25 - 4990| = 10.25 points (after slippage on entry)
+        # contracts = floor(1000 / (10.25 * 50)) = floor(1.95) = 1
+        # But exact values depend on slippage rounding, so just check > 0
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                stop_loss_price=4990.0
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="ES",
+                price=5020.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        assert len(results) == 1
+        assert results.iloc[0]['contracts'] >= 1
+
+    def test_futures_pnl_calculation(self):
+        """P&L = contracts * point_value * (exit_price - entry_price)."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                contracts=2
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="ES",
+                price=5010.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        row = results.iloc[0]
+        # entry with slippage: 5000 + 0.25 = 5000.25
+        # exit with slippage: 5010 - 0.25 = 5009.75
+        # gross_pnl = 2 * 50 * (5009.75 - 5000.25) = 2 * 50 * 9.5 = 950
+        assert row['gross_pnl'] == pytest.approx(950.0, abs=1.0)
+        assert row['contracts'] == 2
+
+    def test_futures_fees_per_contract(self):
+        """Fees = contracts * fee_per_contract por lado."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                contracts=3
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        row = results.iloc[0]
+        assert row['total_entry_fees'] == pytest.approx(3 * 1.39, abs=0.01)
+        assert row['exit_fee'] == pytest.approx(3 * 1.39, abs=0.01)
+
+    def test_futures_capital_only_fees_on_entry(self):
+        """Capital solo se reduce por fees al entrar (no por notional)."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                contracts=1
+            ),
+        ]
+        engine.run(signals)
+        expected_capital = 100000.0 - 1.39
+        assert engine.capital == pytest.approx(expected_capital, abs=0.01)
+
+    def test_futures_skip_trade_insufficient_risk(self):
+        """Si risk < 1 contrato, skip el trade."""
+        engine = BacktestEngine(100.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                stop_loss_price=4990.0
+            ),
+        ]
+        engine.run(signals)
+        assert engine.current_position is None
+
+    def test_futures_pnl_pct_return_on_risk(self):
+        """pnl_pct para futuros = net_pnl / risk_usd * 100."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="ES",
+                price=5000.0,
+                position_size_pct=0.01,
+                contracts=2,
+                stop_loss_price=4990.0
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="ES",
+                price=5020.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        row = results.iloc[0]
+        assert 'risk_usd' in results.columns
+        assert row['risk_usd'] > 0
+        expected_pnl_pct = row['net_pnl'] / row['risk_usd'] * 100
+        assert row['pnl_pct'] == pytest.approx(expected_pnl_pct, rel=1e-2)
+
+    def test_futures_results_have_new_columns(self):
+        """Resultados de futuros tienen contracts, risk_usd, point_value."""
+        engine = BacktestEngine(100000.0, make_es_config())
+        signals = [
+            TradingSignal(datetime(2024,1,1), SignalType.BUY, "ES", 5000.0, 0.01, contracts=1),
+            TradingSignal(datetime(2024,1,2), SignalType.SELL, "ES", 5010.0, 1.0),
+        ]
+        results = engine.run(signals)
+        assert 'contracts' in results.columns
+        assert 'risk_usd' in results.columns
+        assert 'point_value' in results.columns
+
+    def test_crypto_backtest_unchanged(self):
+        """Backtest de crypto sigue produciendo resultados correctos."""
+        engine = BacktestEngine(1000.0, make_crypto_config())
+        signals = [
+            TradingSignal(
+                timestamp=datetime(2024, 1, 1),
+                signal_type=SignalType.BUY,
+                symbol="BTC",
+                price=50000.0,
+                position_size_pct=0.5
+            ),
+            TradingSignal(
+                timestamp=datetime(2024, 1, 2),
+                signal_type=SignalType.SELL,
+                symbol="BTC",
+                price=51000.0,
+                position_size_pct=1.0
+            ),
+        ]
+        results = engine.run(signals)
+        assert len(results) == 1
+        row = results.iloc[0]
+        assert row['contracts'] == 0
+        assert row['risk_usd'] == 0.0
+        assert row['gross_pnl'] > 0
+
+    def test_crypto_empty_results_have_new_columns(self):
+        """DataFrame vacio de crypto tambien tiene las nuevas columnas."""
+        engine = BacktestEngine(1000.0, make_crypto_config())
+        results = engine.run([])
+        assert 'contracts' in results.columns
+        assert 'risk_usd' in results.columns
+        assert 'point_value' in results.columns
