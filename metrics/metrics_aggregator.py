@@ -51,10 +51,16 @@ class MetricsAggregator:
         results_adapted = self._adapt_for_trade_metrics(self.results)
         
         # 2. Calcular métricas por trade
+        # Detectar si es futuros por la columna contracts
+        is_futures = 'contracts' in self.results.columns and (self.results['contracts'] > 0).any()
+        point_value = self.results['point_value'].iloc[0] if 'point_value' in self.results.columns and len(self.results) > 0 else 0.0
+
         metrics_calculator = TradeMetricsCalculator(
             initial_capital=self.strategy.initial_capital,
             market_data=self.strategy.market_data,
-            timeframe=self.strategy.timeframe
+            timeframe=self.strategy.timeframe,
+            is_futures=is_futures,
+            point_value=point_value
         )
         
         self.trade_metrics_df = metrics_calculator.create_trade_metrics_df(results_adapted)

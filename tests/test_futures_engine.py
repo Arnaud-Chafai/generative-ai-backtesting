@@ -1,6 +1,7 @@
 """Tests para el soporte de futuros en el BacktestEngine."""
 
 import pytest
+import numpy as np
 from datetime import datetime
 from models.enums import SignalType
 from models.simple_signals import TradingSignal
@@ -9,6 +10,8 @@ import pandas as pd
 from core.simple_backtest_engine import BacktestEngine
 from config.market_configs.futures_config import get_futures_config
 from config.market_configs.crypto_config import get_crypto_config
+from metrics.trade_metrics import TradeMetricsCalculator
+from utils.timeframe import Timeframe
 
 
 class TestTradingSignalFutures:
@@ -383,3 +386,102 @@ class TestBacktestEngineFutures:
         assert 'contracts' in results.columns
         assert 'risk_usd' in results.columns
         assert 'point_value' in results.columns
+
+
+class TestMetricsFutures:
+    """Tests de metricas adaptadas para futuros."""
+
+    @pytest.fixture
+    def es_market_data(self):
+        """Market data simulada para ES con 5min bars."""
+        dates = pd.date_range('2024-01-01', periods=100, freq='5min')
+        return pd.DataFrame({
+            'Open': 5000.0,
+            'High': 5020.0,
+            'Low': 4980.0,
+            'Close': 5010.0,
+            'Volume': 1000,
+        }, index=dates)
+
+    @pytest.fixture
+    def es_trade_data(self):
+        """Trade data de futuros para metricas."""
+        return pd.DataFrame([{
+            'entry_timestamp': pd.Timestamp('2024-01-01 00:05:00'),
+            'exit_timestamp': pd.Timestamp('2024-01-01 00:30:00'),
+            'entry_price': 5000.0,
+            'usdt_amount': 0.0,
+            'contracts': 2,
+            'risk_usd': 1000.0,
+            'point_value': 50.0,
+            'net_profit_loss': 500.0,
+            'position_side': 'LONG',
+        }])
+
+    def test_mae_mfe_futures_uses_point_value(self, es_market_data, es_trade_data):
+        """MAE/MFE para futuros = price_diff * contracts * point_value."""
+        calc = TradeMetricsCalculator(
+            initial_capital=100000.0,
+            market_data=es_market_data,
+            timeframe=Timeframe.M5,
+            is_futures=True,
+            point_value=50.0
+        )
+        result = calc.create_trade_metrics_df(es_trade_data)
+        # MAE = (5000 - 4980) * 2 * 50 = 20 * 100 = $2000
+        assert result.iloc[0]['MAE'] == pytest.approx(2000.0, rel=0.01)
+        # MFE = (5020 - 5000) * 2 * 50 = 20 * 100 = $2000
+        assert result.iloc[0]['MFE'] == pytest.approx(2000.0, rel=0.01)
+
+    def test_riesgo_aplicado_futures_uses_risk_usd(self, es_market_data, es_trade_data):
+        """riesgo_aplicado = risk_usd / capital * 100."""
+        calc = TradeMetricsCalculator(
+            initial_capital=100000.0,
+            market_data=es_market_data,
+            timeframe=Timeframe.M5,
+            is_futures=True,
+            point_value=50.0
+        )
+        result = calc.create_trade_metrics_df(es_trade_data)
+        # riesgo = 1000 / 100000 * 100 = 1.0%
+        assert result.iloc[0]['riesgo_aplicado'] == pytest.approx(1.0, abs=0.1)
+
+    def test_trade_drawdown_futures(self, es_market_data, es_trade_data):
+        """trade_drawdown = MAE / risk_usd * 100."""
+        calc = TradeMetricsCalculator(
+            initial_capital=100000.0,
+            market_data=es_market_data,
+            timeframe=Timeframe.M5,
+            is_futures=True,
+            point_value=50.0
+        )
+        result = calc.create_trade_metrics_df(es_trade_data)
+        # MAE = 2000, risk_usd = 1000, drawdown = 200%
+        assert result.iloc[0]['trade_drawdown'] == pytest.approx(200.0, rel=0.01)
+
+    def test_crypto_metrics_unchanged(self):
+        """Crypto metrics sin is_futures funciona como siempre."""
+        dates = pd.date_range('2024-01-01', periods=100, freq='5min')
+        market_data = pd.DataFrame({
+            'Open': 50000.0, 'High': 50100.0, 'Low': 49900.0,
+            'Close': 50000.0, 'Volume': 100,
+        }, index=dates)
+        trade_data = pd.DataFrame([{
+            'entry_timestamp': pd.Timestamp('2024-01-01 00:05:00'),
+            'exit_timestamp': pd.Timestamp('2024-01-01 00:30:00'),
+            'entry_price': 50000.0,
+            'usdt_amount': 10000.0,
+            'contracts': 0,
+            'risk_usd': 0.0,
+            'point_value': 0.0,
+            'net_profit_loss': 200.0,
+            'position_side': 'LONG',
+        }])
+        calc = TradeMetricsCalculator(
+            initial_capital=1000.0,
+            market_data=market_data,
+            timeframe=Timeframe.M5
+        )
+        result = calc.create_trade_metrics_df(trade_data)
+        # MAE = (50000 - 49900) * (10000 / 50000) = 100 * 0.2 = 20
+        assert result.iloc[0]['MAE'] == pytest.approx(20.0, rel=0.01)

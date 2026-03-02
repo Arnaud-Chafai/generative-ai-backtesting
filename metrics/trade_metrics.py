@@ -3,10 +3,13 @@ import numpy as np
 from utils.timeframe import Timeframe, prepare_datetime_data
 
 class TradeMetricsCalculator:
-    def __init__(self, initial_capital: float, market_data: pd.DataFrame, timeframe: Timeframe):
+    def __init__(self, initial_capital: float, market_data: pd.DataFrame, timeframe: Timeframe,
+                 is_futures: bool = False, point_value: float = 0.0):
         self.initial_capital = initial_capital
         self.market_data = market_data
         self.timeframe = timeframe
+        self.is_futures = is_futures
+        self.point_value = point_value
 
     def create_trade_metrics_df(self, trade_data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -71,13 +74,9 @@ class TradeMetricsCalculator:
         """
         Añade la columna 'duration_bars' al DF, calculada según el timeframe.
         """
-        df["duration_bars"] = df.apply(
-            lambda row: self._convert_duration_to_bars(
-                row["entry_timestamp"], 
-                row["exit_timestamp"]
-            ),
-            axis=1
-        )
+        bar_seconds = self.timeframe.hours * 3600
+        duration = pd.to_datetime(df["exit_timestamp"]) - pd.to_datetime(df["entry_timestamp"])
+        df["duration_bars"] = duration.dt.total_seconds() / bar_seconds
         return df
 
     def _add_mae_mfe_volatility_efficiency(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -94,7 +93,7 @@ class TradeMetricsCalculator:
                 row["entry_timestamp"],
                 row["exit_timestamp"],
                 row["entry_price"],
-                row["usdt_amount"],
+                row.get("contracts", 0) * self.point_value if self.is_futures else row["usdt_amount"],
                 row["position_side"]
             )
             maes.append(round(mae, 2))
@@ -144,7 +143,10 @@ class TradeMetricsCalculator:
 
         for _, row in df.iterrows():
             # Riesgo aplicado en %
-            riesgo = (row["usdt_amount"] / capital_previo) * 100
+            if self.is_futures and row.get("risk_usd", 0) > 0:
+                riesgo = (row["risk_usd"] / capital_previo) * 100
+            else:
+                riesgo = (row["usdt_amount"] / capital_previo) * 100
             # Retorno sobre capital en %
             roc = (row["net_profit_loss"] / capital_previo) * 100
 
@@ -190,14 +192,26 @@ class TradeMetricsCalculator:
             min_price = sub_data["Low"].min() if "Low" in sub_data.columns else sub_data["Close"].min()
             max_price = sub_data["High"].max() if "High" in sub_data.columns else sub_data["Close"].max()
 
-            if position_side.upper() == "LONG":
-                mae = (entry_price - min_price) * (quantity / entry_price)
-                mfe = (max_price - entry_price) * (quantity / entry_price)
-            elif position_side.upper() == "SHORT":
-                mae = (max_price - entry_price) * (quantity / entry_price)
-                mfe = (entry_price - min_price) * (quantity / entry_price)
+            if self.is_futures:
+                # quantity = contracts * point_value (dollar multiplier)
+                if position_side.upper() == "LONG":
+                    mae = (entry_price - min_price) * quantity
+                    mfe = (max_price - entry_price) * quantity
+                elif position_side.upper() == "SHORT":
+                    mae = (max_price - entry_price) * quantity
+                    mfe = (entry_price - min_price) * quantity
+                else:
+                    raise ValueError(f"position_side invalido: {position_side}")
             else:
-                raise ValueError(f"⚠️ `position_side` inválido: {position_side}. Debe ser 'LONG' o 'SHORT'.")
+                # quantity = usdt_amount (crypto)
+                if position_side.upper() == "LONG":
+                    mae = (entry_price - min_price) * (quantity / entry_price)
+                    mfe = (max_price - entry_price) * (quantity / entry_price)
+                elif position_side.upper() == "SHORT":
+                    mae = (max_price - entry_price) * (quantity / entry_price)
+                    mfe = (entry_price - min_price) * (quantity / entry_price)
+                else:
+                    raise ValueError(f"position_side invalido: {position_side}")
         else:
             mae, mfe, min_price, max_price = np.nan, np.nan, np.nan, np.nan
 
@@ -275,5 +289,12 @@ class TradeMetricsCalculator:
         """
         Calcula y agrega la métrica 'trade_drawdown (%)' al DataFrame.
         """
-        df["trade_drawdown"] = (df["MAE"] / df["entry_price"]) * 100
+        if self.is_futures and "risk_usd" in df.columns:
+            df["trade_drawdown"] = np.where(
+                df["risk_usd"] > 0,
+                (df["MAE"] / df["risk_usd"]) * 100,
+                0.0
+            )
+        else:
+            df["trade_drawdown"] = (df["MAE"] / df["entry_price"]) * 100
         return df
