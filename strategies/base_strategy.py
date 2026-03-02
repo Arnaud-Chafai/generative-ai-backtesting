@@ -117,26 +117,32 @@ class BaseStrategy(ABC):
         signal_type: SignalType,
         timestamp: datetime,
         price: float,
-        position_size_pct: float
+        position_size_pct: float,
+        stop_loss_price: float = None,
+        contracts: int = None
     ) -> TradingSignal:
         """
-        Helper para crear señales simplificadas desde estrategias.
-        
+        Helper para crear senales simplificadas desde estrategias.
+
         Args:
             signal_type: BUY o SELL
-            timestamp: Momento de la señal (del índice del DataFrame)
+            timestamp: Momento de la senal (del indice del DataFrame)
             price: Precio de referencia (ej: Close del candle)
             position_size_pct: Porcentaje del capital a usar (0.1 = 10%)
-        
+            stop_loss_price: (Futuros) Precio de stop loss para auto-sizing
+            contracts: (Futuros) Override manual de contratos
+
         Returns:
-            TradingSignal creado y añadido a la lista
+            TradingSignal creado y anadido a la lista
         """
         signal = TradingSignal(
             timestamp=timestamp,
             signal_type=signal_type,
             symbol=self.symbol,
             price=price,
-            position_size_pct=position_size_pct
+            position_size_pct=position_size_pct,
+            stop_loss_price=stop_loss_price,
+            contracts=contracts
         )
         
         self.simple_signals.append(signal)
