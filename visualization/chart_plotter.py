@@ -224,6 +224,9 @@ class BacktestVisualizerInteractive:
         """Prepara datos OHLCV con columnas normalizadas y 'time' como columna."""
         df = self._filtered_market.copy()
 
+        # Eliminar timestamps duplicados (Lightweight Charts requiere timestamps estrictamente crecientes)
+        df = df[~df.index.duplicated(keep='first')]
+
         rename_map = {}
         for col in df.columns:
             col_lower = col.lower()

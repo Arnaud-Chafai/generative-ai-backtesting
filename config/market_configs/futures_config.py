@@ -13,7 +13,7 @@ FUTURES_CONFIG = {
             "tick_value": 12.50,
             "contract_size": 50,
             "slippage_ticks": 1,
-            "exchange_fee": 1.39,  # USD por contrato (CME exchange fee)
+            "exchange_fee": 2.50,  # USD por contrato por lado (exchange + broker)
             "price_precision": 2,
             "currency": "USD",
         },
@@ -22,7 +22,7 @@ FUTURES_CONFIG = {
             "tick_value": 5.00,
             "contract_size": 20,
             "slippage_ticks": 1,
-            "exchange_fee": 1.39,  # USD por contrato (CME exchange fee)
+            "exchange_fee": 2.50,  # USD por contrato por lado (exchange + broker)
             "price_precision": 2,
             "currency": "USD",
         },
@@ -31,7 +31,7 @@ FUTURES_CONFIG = {
             "tick_value": 10.00,
             "contract_size": 100,  # 100 onzas troy
             "slippage_ticks": 1,
-            "exchange_fee": 1.60,  # USD por contrato (COMEX exchange fee)
+            "exchange_fee": 2.80,  # USD por contrato por lado (exchange + broker)
             "price_precision": 2,
             "currency": "USD",
         },
@@ -40,7 +40,7 @@ FUTURES_CONFIG = {
             "tick_value": 10.00,
             "contract_size": 1000,  # 1000 barriles
             "slippage_ticks": 2,
-            "exchange_fee": 1.50,  # USD por contrato (NYMEX exchange fee)
+            "exchange_fee": 2.50,  # USD por contrato por lado (exchange + broker)
             "price_precision": 2,
             "currency": "USD",
         },
@@ -55,8 +55,7 @@ def get_futures_config(exchange: str, symbol: str) -> dict:
     El slippage se pasa como slippage_ticks (valor fijo). El engine
     lo aplica como: price ± (slippage_ticks * tick_size).
 
-    El exchange_fee se convierte de USD fijo a ratio usando contract_size
-    y un precio de referencia conservador.
+    El exchange_fee es el costo total por contrato por lado (exchange + broker).
 
     Args:
         exchange: Nombre del exchange (e.g., "CME")
