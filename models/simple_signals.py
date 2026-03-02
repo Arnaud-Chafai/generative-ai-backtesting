@@ -9,6 +9,7 @@ cuando la señal se ejecuta.
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 from models.enums import SignalType  # Importar desde enums.py
 
 @dataclass
@@ -26,6 +27,8 @@ class TradingSignal:
         symbol: El activo que queremos operar (ej: "BTC", "ETH", "ES")
         price: Precio de referencia del mercado en ese momento (ej: df['Close'])
         position_size_pct: Qué porcentaje del capital disponible usar (0.1 = 10%)
+        stop_loss_price: (Opcional, futuros) Precio de stop loss para auto-sizing de contratos
+        contracts: (Opcional, futuros) Override manual del número de contratos
     
     Ejemplo de uso:
         signal = TradingSignal(
@@ -41,7 +44,9 @@ class TradingSignal:
     symbol: str
     price: float
     position_size_pct: float  # Fracción del capital: 0.1 = 10%, 0.5 = 50%, etc.
-    
+    stop_loss_price: Optional[float] = None  # Futuros: precio de stop loss para auto-sizing
+    contracts: Optional[int] = None  # Futuros: override manual de contratos
+
     def __post_init__(self):
         """
         Validaciones básicas después de crear la señal.
@@ -57,11 +62,28 @@ class TradingSignal:
                 f"position_size_pct debe estar entre 0 y 1 (0% a 100%), "
                 f"recibido: {self.position_size_pct}"
             )
+
+        if self.stop_loss_price is not None and self.stop_loss_price <= 0:
+            raise ValueError(
+                f"stop_loss_price debe ser positivo si se provee, "
+                f"recibido: {self.stop_loss_price}"
+            )
+
+        if self.contracts is not None and self.contracts < 1:
+            raise ValueError(
+                f"contracts debe ser >= 1 si se provee, "
+                f"recibido: {self.contracts}"
+            )
     
     def __repr__(self):
         """Representación legible de la señal para debugging."""
-        return (
+        base = (
             f"TradingSignal({self.signal_type.value} {self.symbol} "
             f"@ {self.price:.2f} on {self.timestamp}, "
-            f"size={self.position_size_pct*100:.1f}%)"
+            f"size={self.position_size_pct*100:.1f}%"
         )
+        if self.stop_loss_price is not None:
+            base += f", SL={self.stop_loss_price:.2f}"
+        if self.contracts is not None:
+            base += f", contracts={self.contracts}"
+        return base + ")"
