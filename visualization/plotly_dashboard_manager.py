@@ -11,36 +11,27 @@ import traceback
 
 from visualization.plotly_dashboards.performance_dashboard import visualize_performance
 from visualization.plotly_dashboards.temporal_analysis import visualize_temporal_analysis
-from visualization.plotly_dashboards.metrics_distribution import visualize_metrics_distribution
-from visualization.plotly_dashboards.metrics_boxplot import visualize_metrics_boxplot
-from visualization.plotly_dashboards.scatter_metrics import visualize_scatter_consolidated
+from visualization.plotly_dashboards.trade_metrics import visualize_trade_metrics
 
 
 # ── Module registry ──────────────────────────────────────────────────────────
 
 MODULE_ORDER = [
-    'performance', 'temporal_analysis',
-    'metrics_distribution', 'metrics_boxplot', 'scatter',
+    'performance', 'temporal_analysis', 'trade_metrics',
 ]
 
 MODULE_FUNCTIONS = {
     'performance': visualize_performance,
     'temporal_analysis': visualize_temporal_analysis,
-    'metrics_distribution': visualize_metrics_distribution,
-    'metrics_boxplot': visualize_metrics_boxplot,
-    'scatter': visualize_scatter_consolidated,
+    'trade_metrics': visualize_trade_metrics,
 }
 
-NON_STRATEGY_MODULES = {
-    'scatter',
-}
+NON_STRATEGY_MODULES = set()
 
 TAB_LABELS = {
     'performance': 'Performance',
     'temporal_analysis': 'Temporal Analysis',
-    'metrics_distribution': 'Distributions',
-    'metrics_boxplot': 'Boxplots',
-    'scatter': 'Scatter Analysis',
+    'trade_metrics': 'Trade Metrics',
 }
 
 
