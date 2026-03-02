@@ -20,14 +20,15 @@ from models.simple_signals import TradingSignal
 class Entry:
     """
     Una entrada individual dentro de una posición.
-    
+
     Cuando haces múltiples compras para promediar, cada compra
     es un Entry separado que se guarda en la lista de entradas
     de la Position.
     """
     timestamp: datetime
     price: float  # Precio real después de aplicar slippage
-    size_usdt: float  # Cuántos USDT usamos en esta entrada
+    size_usdt: float       # Crypto: USDT gastados. Futuros: 0
+    contracts: int          # Crypto: 0. Futuros: N contratos
     fee: float  # Fees pagados en esta entrada
     slippage_cost: float  # Costo del slippage en esta entrada
 
@@ -46,11 +47,12 @@ class Position:
         self.entry_time = entry_time  # Timestamp de la primera entrada
         self.entries: list[Entry] = []
     
-    def add_entry(self, timestamp: datetime, price: float, 
-                  size_usdt: float, fee: float, slippage_cost: float):
+    def add_entry(self, timestamp: datetime, price: float,
+                  size_usdt: float, fee: float, slippage_cost: float,
+                  contracts: int = 0):
         """
         Añade una entrada más a esta posición.
-        
+
         Esto se llama cada vez que llega una señal BUY mientras
         ya hay una posición abierta. Es cómo implementamos el
         promediado de entradas.
@@ -59,6 +61,7 @@ class Position:
             timestamp=timestamp,
             price=price,
             size_usdt=size_usdt,
+            contracts=contracts,
             fee=fee,
             slippage_cost=slippage_cost
         ))
@@ -95,6 +98,49 @@ class Position:
         if total_crypto == 0:
             return 0.0
         return self.total_cost() / total_crypto
+
+    def total_contracts(self) -> int:
+        """Total de contratos en todas las entradas."""
+        return sum(entry.contracts for entry in self.entries)
+
+    def average_entry_price_futures(self) -> float:
+        """Precio promedio ponderado por contratos (futuros)."""
+        total_c = self.total_contracts()
+        if total_c == 0:
+            return 0.0
+        return sum(e.price * e.contracts for e in self.entries) / total_c
+
+    def partial_close_futures(self, pct: float) -> dict:
+        """
+        Cierra una fracción de la posición en futuros (floor por entrada).
+
+        Returns:
+            dict con total_contracts, total_entry_fees, total_entry_slippage
+        """
+        closed_contracts = 0
+        closed_fees = 0.0
+        closed_slippage = 0.0
+
+        for entry in self.entries:
+            contracts_to_close = int(entry.contracts * pct)  # floor
+            if contracts_to_close == 0:
+                continue
+            ratio = contracts_to_close / entry.contracts
+            closed_contracts += contracts_to_close
+            closed_fees += entry.fee * ratio
+            closed_slippage += entry.slippage_cost * ratio
+
+            # Reducir la entrada restante
+            remaining_ratio = 1 - ratio
+            entry.contracts -= contracts_to_close
+            entry.fee *= remaining_ratio
+            entry.slippage_cost *= remaining_ratio
+
+        return {
+            'total_contracts': closed_contracts,
+            'total_entry_fees': closed_fees,
+            'total_entry_slippage': closed_slippage,
+        }
 
     def partial_close(self, pct: float) -> dict:
         """
