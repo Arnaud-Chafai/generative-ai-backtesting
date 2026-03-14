@@ -17,6 +17,7 @@ backtesting/
 ├── metrics/                 Metricas por trade y portfolio
 ├── strategies/              BaseStrategy + ejemplos
 ├── optimization/            Optimizacion de parametros (Grid Search)
+├── validation/          Validacion estadistica (OOS, MC, Walk-Forward)
 ├── visualization/
 │   ├── chart_plotter.py     Charts de velas (estatico + interactivo)
 │   ├── dashboard_manager.py Coordinador de dashboards
@@ -40,6 +41,7 @@ Cada modulo tiene su propio CLAUDE.md con detalle completo:
 | [metrics/](metrics/CLAUDE.md) | TradeMetrics, BacktestMetrics | MAE, MFE, Sharpe, drawdown, etc. |
 | [strategies/](strategies/CLAUDE.md) | BaseStrategy | Como crear estrategias nuevas |
 | [optimization/](optimization/CLAUDE.md) | ParameterOptimizer | Grid Search + visualizacion 3D |
+| [validation/](validation/CLAUDE.md) | OOSSplit, MonteCarlo, WalkForward | Deteccion de overfitting |
 | [visualization/](visualization/CLAUDE.md) | Charts + dashboards | Graficos de velas y 10 dashboards |
 | [visualization/dashboards/](visualization/dashboards/CLAUDE.md) | 10 dashboards | Detalle de cada dashboard |
 | [utils/](utils/CLAUDE.md) | Timeframe | Enum de timeframes + constantes |
@@ -111,7 +113,7 @@ class MiEstrategiaFuturos(BaseStrategy):
 | Fase | Descripcion | Prioridad |
 |------|-------------|-----------|
 | 4b | Random Search + Bayesian optimization | Alta |
-| 4c | Walk-Forward testing | Media |
+| 4c | Validation module (OOS, Monte Carlo, Walk-Forward) | ✅ |
 | 4d | Multiprocessing | Baja |
 | 5 | Mas estrategias (RSI, Bollinger, etc.) | Media |
 | 6 | Comparador de estrategias | Media |
