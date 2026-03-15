@@ -127,6 +127,6 @@ class MiEstrategiaFuturos(BaseStrategy):
 
 ## Notas tecnicas
 
-- Solo soporta posiciones LONG actualmente
+- Soporta posiciones LONG y SHORT (una a la vez, cierre explicito)
 - `Timeframe` enum vive en `utils/` (conceptualmente es un enum de dominio)
 - `set_style()` esta duplicada en 3 archivos de dashboards
