@@ -118,6 +118,7 @@ class BaseStrategy(ABC):
         timestamp: datetime,
         price: float,
         position_size_pct: float,
+        position_side: SignalPositionSide = SignalPositionSide.LONG,
         stop_loss_price: float = None,
         contracts: int = None
     ) -> TradingSignal:
@@ -129,6 +130,7 @@ class BaseStrategy(ABC):
             timestamp: Momento de la senal (del indice del DataFrame)
             price: Precio de referencia (ej: Close del candle)
             position_size_pct: Porcentaje del capital a usar (0.1 = 10%)
+            position_side: LONG o SHORT (default: LONG)
             stop_loss_price: (Futuros) Precio de stop loss para auto-sizing
             contracts: (Futuros) Override manual de contratos
 
@@ -141,6 +143,7 @@ class BaseStrategy(ABC):
             symbol=self.symbol,
             price=price,
             position_size_pct=position_size_pct,
+            position_side=position_side,
             stop_loss_price=stop_loss_price,
             contracts=contracts
         )

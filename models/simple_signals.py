@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from models.enums import SignalType  # Importar desde enums.py
+from models.enums import SignalType, SignalPositionSide  # Importar desde enums.py
 
 @dataclass
 class TradingSignal:
@@ -44,6 +44,7 @@ class TradingSignal:
     symbol: str
     price: float
     position_size_pct: float  # Fracción del capital: 0.1 = 10%, 0.5 = 50%, etc.
+    position_side: SignalPositionSide = SignalPositionSide.LONG  # LONG or SHORT
     stop_loss_price: Optional[float] = None  # Futuros: precio de stop loss para auto-sizing
     contracts: Optional[int] = None  # Futuros: override manual de contratos
 
@@ -82,6 +83,8 @@ class TradingSignal:
             f"@ {self.price:.2f} on {self.timestamp}, "
             f"size={self.position_size_pct*100:.1f}%"
         )
+        if self.position_side == SignalPositionSide.SHORT:
+            base += f", side=SHORT"
         if self.stop_loss_price is not None:
             base += f", SL={self.stop_loss_price:.2f}"
         if self.contracts is not None:
