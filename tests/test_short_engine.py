@@ -237,3 +237,115 @@ class TestShortFuturesEngine:
         assert len(df) == 1
         assert df['gross_pnl'].iloc[0] > 0
         assert df['position_side'].iloc[0] == 'LONG'
+
+
+import numpy as np
+import pandas as pd
+from core.backtest_runner import BacktestRunner
+from models.enums import MarketType
+from strategies.base_strategy import BaseStrategy
+from utils.timeframe import Timeframe
+
+
+def _create_synthetic_data(n_bars=200, seed=42):
+    """Create synthetic OHLCV data for short metrics tests."""
+    np.random.seed(seed)
+    dates = pd.date_range('2024-01-01', periods=n_bars, freq='5min')
+    trend = np.linspace(100, 120, n_bars)
+    noise = np.random.normal(0, 0.5, n_bars)
+    close = trend + noise
+    open_prices = close + np.random.normal(0, 0.2, n_bars)
+    high = np.maximum(open_prices, close) + np.abs(np.random.normal(0, 0.3, n_bars))
+    low = np.minimum(open_prices, close) - np.abs(np.random.normal(0, 0.3, n_bars))
+    df = pd.DataFrame({
+        'Open': open_prices,
+        'High': high,
+        'Low': low,
+        'Close': close,
+        'Volume': np.random.uniform(100, 1000, n_bars),
+    }, index=dates)
+    df.index.name = 'Time'
+    return df
+
+
+class _DummyBase(BaseStrategy):
+    """Minimal base for short metrics tests."""
+    def __init__(self, buy_every=20, hold_bars=10, **kwargs):
+        super().__init__(
+            market=MarketType.CRYPTO,
+            symbol=kwargs.pop('symbol', 'BTC'),
+            strategy_name='DummyTest',
+            timeframe=kwargs.pop('timeframe', Timeframe.M5),
+            exchange=kwargs.pop('exchange', 'Binance'),
+            initial_capital=kwargs.pop('initial_capital', 1000.0),
+            data=kwargs.pop('data', None),
+        )
+        self.buy_every = buy_every
+        self.hold_bars = hold_bars
+
+    def generate_simple_signals(self):
+        return self.simple_signals
+
+
+class ShortDummyStrategy(_DummyBase):
+    """DummyStrategy that opens SHORT positions instead of LONG."""
+    def generate_simple_signals(self):
+        df = self.market_data
+        i = 0
+        while i + self.hold_bars < len(df):
+            # SHORT entry: SELL
+            self.create_simple_signal(
+                signal_type=SignalType.SELL,
+                timestamp=df.index[i],
+                price=df['Close'].iloc[i],
+                position_size_pct=1.0,
+                position_side=SignalPositionSide.SHORT,
+            )
+            # SHORT exit: BUY
+            sell_i = i + self.hold_bars
+            self.create_simple_signal(
+                signal_type=SignalType.BUY,
+                timestamp=df.index[sell_i],
+                price=df['Close'].iloc[sell_i],
+                position_size_pct=1.0,
+                position_side=SignalPositionSide.SHORT,
+            )
+            i += self.buy_every
+        return self.simple_signals
+
+
+class TestShortMetricsPropagation:
+    def test_position_side_in_trade_metrics_df(self):
+        """position_side must propagate to trade_metrics_df."""
+        data = _create_synthetic_data(200, seed=42)
+        strategy = ShortDummyStrategy(data=data)
+        runner = BacktestRunner(strategy)
+        runner.run(verbose=False)
+
+        trade_df = runner.metrics.trade_metrics_df
+        assert 'position_side' in trade_df.columns
+        assert all(trade_df['position_side'] == 'SHORT')
+
+    def test_all_metrics_computed_for_short(self):
+        """all_metrics dict should be fully populated for SHORT trades."""
+        data = _create_synthetic_data(200, seed=42)
+        strategy = ShortDummyStrategy(data=data)
+        runner = BacktestRunner(strategy)
+        runner.run(verbose=False)
+
+        metrics = runner.metrics.all_metrics
+        assert 'sharpe_ratio' in metrics
+        assert 'total_trades' in metrics
+        assert metrics['total_trades'] > 0
+
+    def test_mae_mfe_correct_for_short(self):
+        """For SHORT: price going UP = MAE (adverse), DOWN = MFE (favorable)."""
+        data = _create_synthetic_data(200, seed=42)
+        strategy = ShortDummyStrategy(data=data)
+        runner = BacktestRunner(strategy)
+        runner.run(verbose=False)
+
+        trade_df = runner.metrics.trade_metrics_df
+        # MAE and MFE should be populated (not NaN)
+        assert trade_df['MAE'].notna().any()
+        assert trade_df['MFE'].notna().any()

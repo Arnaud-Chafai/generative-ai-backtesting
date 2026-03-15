@@ -65,8 +65,10 @@ class TradeMetricsCalculator:
                 .str.upper()
             )
         else:
-            # Si no existe la columna, asumir LONG por defecto
-            df["position_side"] = "LONG"
+            raise ValueError(
+                "trade_data must include 'position_side' column. "
+                "Ensure BacktestEngine outputs position_side."
+            )
         
         return df
 

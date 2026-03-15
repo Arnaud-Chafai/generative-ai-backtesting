@@ -87,7 +87,6 @@ class MetricsAggregator:
             'total_cost': 'usdt_amount',
             'net_pnl': 'net_profit_loss'
         })
-        adapted['position_side'] = 'LONG'  # TODO: adaptar cuando tengamos SHORT
         return adapted
     
     def _adapt_for_portfolio_metrics(self, trade_metrics: pd.DataFrame) -> pd.DataFrame:
