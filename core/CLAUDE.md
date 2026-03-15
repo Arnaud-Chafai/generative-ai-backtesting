@@ -26,12 +26,19 @@ engine = BacktestEngine(initial_capital=1000.0, market_config=config)
 df_results = engine.run(signals)  # lista de TradingSignal
 ```
 
-- `_handle_buy()`: abre posicion nueva o agrega entrada (promediado)
-- `_handle_sell()`: cierra posicion total o parcial, calcula P&L
+- `_open_position()`: abre posicion nueva o agrega entrada (promediado)
+- `_close_position()`: cierra posicion total o parcial, calcula P&L
   - `position_size_pct < 1.0`: cierre parcial via `Position.partial_close()`, posicion sigue abierta
   - `position_size_pct >= 1.0`: cierre total (comportamiento original)
 - `_apply_slippage_to_price()`: simula deslizamiento, redondea a tick_size
-- Retorna DataFrame con columnas: symbol, entry/exit_time, avg_entry_price, exit_price, total_cost, exit_value, fees, slippage, gross_pnl, net_pnl, capital_after, pnl_pct
+- Retorna DataFrame con columnas: symbol, entry/exit_time, avg_entry_price, exit_price, total_cost, exit_value, fees, slippage, gross_pnl, net_pnl, capital_after, pnl_pct, position_side
+
+**Soporte SHORT:**
+- `position_side` en TradingSignal determina la direccion (LONG o SHORT)
+- Routing: BUY+LONG y SELL+SHORT = entrada, SELL+LONG y BUY+SHORT = salida
+- P&L invertido para SHORT: `closed_cost - exit_value` (crypto), `avg_entry - exit_price` (futuros)
+- Slippage siempre en contra del trader, independiente de la direccion
+- Una posicion a la vez, cierre explicito
 
 ### backtest_runner.py — Orquestador
 
